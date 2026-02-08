@@ -11,6 +11,10 @@ export function DisconnectSerial():Promise<void>;
 
 export function GetConfig():Promise<config.Config>;
 
+export function GetRemoteClipboard():Promise<string>;
+
+export function GetRemoteDiag():Promise<string>;
+
 export function GetSerialStatus():Promise<string>;
 
 export function GetStreamURL():Promise<string>;
@@ -24,6 +28,8 @@ export function ListVideoDevices():Promise<Array<video.VideoDevice>>;
 export function SaveConfig():Promise<void>;
 
 export function SendKeyEvent(arg1:string,arg2:boolean):Promise<void>;
+
+export function SendMouseAbs(arg1:number,arg2:number):Promise<void>;
 
 export function SendMouseButton(arg1:number,arg2:boolean):Promise<void>;
 

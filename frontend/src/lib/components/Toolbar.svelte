@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { StartVideo, StopVideo, GetVideoStatus, SendText } from '../../../wailsjs/go/main/App';
+  import { StartVideo, StopVideo, GetVideoStatus, SendText, GetRemoteClipboard, GetRemoteDiag } from '../../../wailsjs/go/main/App';
   import { connection, updateVideo } from '../stores/connection';
   import { createEventDispatcher } from 'svelte';
 
@@ -63,6 +63,50 @@
     sending = false;
   }
 
+  let clipboardStatus = '';
+
+  async function getRemoteClipboard() {
+    clipboardStatus = 'Fetching...';
+    try {
+      const text = await GetRemoteClipboard();
+      if (text) {
+        await navigator.clipboard.writeText(text);
+        clipboardStatus = 'Copied!';
+      } else {
+        clipboardStatus = 'Empty';
+      }
+    } catch (e) {
+      clipboardStatus = `Error: ${e}`;
+    }
+    setTimeout(() => { clipboardStatus = ''; }, 2000);
+  }
+
+  let showDiag = false;
+  let diagText = '';
+  let diagLoading = false;
+
+  async function runDiagnostics() {
+    diagLoading = true;
+    diagText = '';
+    showDiag = true;
+    try {
+      diagText = await GetRemoteDiag();
+    } catch (e) {
+      diagText = `Error: ${e}`;
+    }
+    diagLoading = false;
+  }
+
+  function closeDiag() {
+    showDiag = false;
+    diagText = '';
+  }
+
+  function onDiagKeydown(e: KeyboardEvent) {
+    if (e.code === 'Escape') closeDiag();
+    e.stopPropagation();
+  }
+
   function onTextKeydown(e: KeyboardEvent) {
     // Ctrl/Cmd+Enter to send
     if (e.code === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -88,10 +132,19 @@
     <button class="btn" on:click={openTextInput} title="Type text (Japanese etc.)">
       Type Text
     </button>
+    <button class="btn" on:click={getRemoteClipboard} title="Get clipboard from remote RPi">
+      Get Clipboard
+    </button>
+    {#if clipboardStatus}
+      <span class="clipboard-status">{clipboardStatus}</span>
+    {/if}
   </div>
   <div class="toolbar-right">
     <button class="btn" on:click={toggleFullscreen} title="Toggle fullscreen">
       Fullscreen
+    </button>
+    <button class="btn" on:click={runDiagnostics} title="RPi diagnostics">
+      Diag
     </button>
     <button class="btn" on:click={openSettings} title="Settings">
       Settings
@@ -120,6 +173,23 @@
         <button class="btn btn-primary" on:click={sendText} disabled={!textToSend || sending}>
           Send
         </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if showDiag}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <div class="text-overlay" on:click|self={closeDiag} on:keydown={onDiagKeydown} role="presentation">
+    <div class="text-dialog diag-dialog">
+      <div class="text-header">
+        <span>RPi Diagnostics</span>
+        <button class="close-btn" on:click={closeDiag}>&times;</button>
+      </div>
+      <pre class="diag-output">{diagLoading ? 'Fetching diagnostics...' : diagText}</pre>
+      <div class="text-footer">
+        <span class="hint">Esc to close</span>
+        <button class="btn" on:click={runDiagnostics} disabled={diagLoading}>Refresh</button>
       </div>
     </div>
   </div>
@@ -163,6 +233,11 @@
 
   .btn:hover {
     background: #475569;
+  }
+
+  .clipboard-status {
+    font-size: 0.75em;
+    color: #94a3b8;
   }
 
   .btn:disabled {
@@ -245,5 +320,27 @@
   .hint {
     font-size: 0.75em;
     color: #64748b;
+  }
+
+  .diag-dialog {
+    width: 600px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .diag-output {
+    flex: 1;
+    overflow: auto;
+    padding: 10px 14px;
+    margin: 0;
+    background: #0f172a;
+    color: #a5f3fc;
+    font-size: 0.8em;
+    font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 60vh;
+    border: none;
   }
 </style>

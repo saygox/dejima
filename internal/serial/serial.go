@@ -6,16 +6,26 @@ import (
 	"sync"
 
 	"go.bug.st/serial"
+
+	"github.com/saygox/kvm-like/internal/protocol"
 )
 
 // DefaultBaudRate is the UART baud rate for FT232 communication.
 const DefaultBaudRate = 115200
 
-// Port wraps a serial port connection with thread-safe write access.
+// Port wraps a serial port connection with thread-safe write access
+// and a background reader that dispatches incoming messages.
 type Port struct {
-	port serial.Port
-	mu   sync.Mutex
-	name string
+	port   serial.Port
+	mu     sync.Mutex
+	name   string
+	stopCh chan struct{}
+
+	// IncomingClipboard receives clipboard data sent from RPi.
+	IncomingClipboard chan string
+	// IncomingDiag receives diagnostic data chunks from RPi.
+	// Empty string signals end of diagnostic output.
+	IncomingDiag chan string
 }
 
 // Open opens a serial port with the given name and baud rate.
@@ -34,10 +44,17 @@ func Open(portName string, baudRate int) (*Port, error) {
 
 	log.Printf("serial: opened %s at %d baud", portName, baudRate)
 
-	return &Port{
-		port: p,
-		name: portName,
-	}, nil
+	port := &Port{
+		port:              p,
+		name:              portName,
+		stopCh:            make(chan struct{}),
+		IncomingClipboard: make(chan string, 1),
+		IncomingDiag:      make(chan string, 16),
+	}
+
+	go port.readLoop()
+
+	return port, nil
 }
 
 // Name returns the port name.
@@ -64,14 +81,66 @@ func (p *Port) Write(payload []byte) error {
 	return nil
 }
 
-// Read reads one framed message from the serial port.
-// Returns the payload (without framing).
-func (p *Port) Read() ([]byte, error) {
-	return ReadFrame(p.port)
+// readLoop reads framed messages from the serial port and dispatches them.
+func (p *Port) readLoop() {
+	for {
+		select {
+		case <-p.stopCh:
+			return
+		default:
+		}
+
+		payload, err := ReadFrame(p.port)
+		if err != nil {
+			select {
+			case <-p.stopCh:
+				return
+			default:
+				log.Printf("serial: read error: %v", err)
+				continue
+			}
+		}
+
+		msg, err := protocol.Decode(payload)
+		if err != nil {
+			log.Printf("serial: decode error: %v", err)
+			continue
+		}
+
+		switch ev := msg.Payload.(type) {
+		case protocol.ClipboardDataEvent:
+			// Non-blocking send to channel
+			select {
+			case p.IncomingClipboard <- ev.Text:
+			default:
+				// Channel full, drop old and replace
+				select {
+				case <-p.IncomingClipboard:
+				default:
+				}
+				p.IncomingClipboard <- ev.Text
+			}
+		case protocol.DiagDataEvent:
+			select {
+			case p.IncomingDiag <- ev.Text:
+			default:
+				log.Printf("serial: diag channel full, dropping chunk")
+			}
+		case protocol.ACKEvent:
+			// ACK received — currently unused, just log errors
+			if ev.Status != 0 {
+				log.Printf("serial: RPi returned ACK error")
+			}
+		default:
+			log.Printf("serial: unexpected message type 0x%02x", msg.Type)
+		}
+	}
 }
 
 // Close closes the serial port.
 func (p *Port) Close() error {
+	close(p.stopCh)
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

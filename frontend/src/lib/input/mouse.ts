@@ -1,7 +1,8 @@
-import { SendMouseMove, SendMouseButton, SendMouseScroll } from '../../../wailsjs/go/main/App';
+import { SendMouseMove, SendMouseButton, SendMouseScroll, SendMouseAbs } from '../../../wailsjs/go/main/App';
 
 let capturing = false;
 let targetElement: HTMLElement | null = null;
+let onCaptureExit: (() => void) | null = null;
 
 // Accumulate mouse deltas and send at throttled rate (~60Hz)
 let accDX = 0;
@@ -26,6 +27,9 @@ function flushMouseMove() {
 
 function onMouseMove(e: MouseEvent) {
   if (!capturing) return;
+  // Don't send movement if cursor is outside the video container
+  // (unless pointer lock is active, where all movement is relative)
+  if (!document.pointerLockElement && !isInsideTarget(e)) return;
 
   // Use movementX/Y if available (works both with and without pointer lock)
   let dx: number;
@@ -51,20 +55,33 @@ function onMouseMove(e: MouseEvent) {
   }
 }
 
+function isInsideTarget(e: MouseEvent): boolean {
+  if (!targetElement) return false;
+  return targetElement.contains(e.target as Node);
+}
+
 function onMouseDown(e: MouseEvent) {
   if (!capturing) return;
+  // Click outside video container → exit capture, don't send to remote
+  if (!isInsideTarget(e)) {
+    exitCapture();
+    if (onCaptureExit) onCaptureExit();
+    return;
+  }
   e.preventDefault();
   SendMouseButton(e.button, true).catch(console.error);
 }
 
 function onMouseUp(e: MouseEvent) {
   if (!capturing) return;
+  if (!isInsideTarget(e)) return;
   e.preventDefault();
   SendMouseButton(e.button, false).catch(console.error);
 }
 
 function onWheel(e: WheelEvent) {
   if (!capturing) return;
+  // Wheel is only registered on the element itself, so no outside check needed
   e.preventDefault();
   // Normalize to -1/+1
   const delta = e.deltaY > 0 ? 1 : e.deltaY < 0 ? -1 : 0;
@@ -73,10 +90,63 @@ function onWheel(e: WheelEvent) {
   }
 }
 
-/** Called by VideoDisplay to enter capture mode */
-export function enterCapture() {
+const ABS_MAX = 32767;
+
+/**
+ * Map a click position on the video container to normalized absolute
+ * coordinates (0-32767), accounting for object-fit:contain letterboxing.
+ */
+function mapToAbsolute(clientX: number, clientY: number): { x: number; y: number } | null {
+  if (!targetElement) return null;
+  const container = targetElement;
+  const img = container.querySelector('img.video-stream') as HTMLImageElement | null;
+  const containerRect = container.getBoundingClientRect();
+
+  let renderX = 0, renderY = 0;
+  let renderW = containerRect.width, renderH = containerRect.height;
+
+  if (img && img.naturalWidth && img.naturalHeight) {
+    const videoAspect = img.naturalWidth / img.naturalHeight;
+    const containerAspect = containerRect.width / containerRect.height;
+    if (videoAspect > containerAspect) {
+      // Letterbox top/bottom
+      renderW = containerRect.width;
+      renderH = containerRect.width / videoAspect;
+      renderX = 0;
+      renderY = (containerRect.height - renderH) / 2;
+    } else {
+      // Letterbox left/right
+      renderH = containerRect.height;
+      renderW = containerRect.height * videoAspect;
+      renderX = (containerRect.width - renderW) / 2;
+      renderY = 0;
+    }
+  }
+
+  const relX = clientX - containerRect.left - renderX;
+  const relY = clientY - containerRect.top - renderY;
+  const normX = Math.max(0, Math.min(1, relX / renderW));
+  const normY = Math.max(0, Math.min(1, relY / renderH));
+
+  return { x: Math.round(normX * ABS_MAX), y: Math.round(normY * ABS_MAX) };
+}
+
+/** Called by VideoDisplay to enter capture mode.
+ *  If clientX/Y are provided (from the click), send an absolute position
+ *  to sync the remote cursor to where the user clicked.
+ */
+export function enterCapture(clientX?: number, clientY?: number) {
   capturing = true;
   hasLast = false;
+
+  // Sync remote cursor to the click position via absolute coords
+  if (clientX !== undefined && clientY !== undefined) {
+    const abs = mapToAbsolute(clientX, clientY);
+    if (abs) {
+      SendMouseAbs(abs.x, abs.y).catch(console.error);
+    }
+  }
+
   // Try pointer lock for best experience, but don't depend on it
   if (targetElement) {
     try {
@@ -110,8 +180,9 @@ export function isCapturing(): boolean {
   return capturing;
 }
 
-export function startMouseCapture(element: HTMLElement) {
+export function startMouseCapture(element: HTMLElement, onExit?: () => void) {
   targetElement = element;
+  onCaptureExit = onExit || null;
   // Listen on document so events fire even with pointer lock
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mousedown', onMouseDown);
@@ -123,6 +194,7 @@ export function startMouseCapture(element: HTMLElement) {
       // Pointer lock was exited (e.g. Esc) — exit capture
       capturing = false;
       hasLast = false;
+      if (onCaptureExit) onCaptureExit();
     }
   });
 }

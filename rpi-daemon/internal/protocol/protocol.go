@@ -8,8 +8,13 @@ const (
 	MsgMouseMove   byte = 0x02
 	MsgMouseButton byte = 0x03
 	MsgMouseScroll byte = 0x04
-	MsgTextInput   byte = 0x05
-	MsgACK         byte = 0x10
+	MsgTextInput     byte = 0x05
+	MsgClipboardReq  byte = 0x06
+	MsgClipboardData byte = 0x07
+	MsgMouseAbs  byte = 0x08
+	MsgDiagReq   byte = 0x09
+	MsgDiagData  byte = 0x0A
+	MsgACK           byte = 0x10
 	MsgPing        byte = 0xFF
 )
 
@@ -46,6 +51,11 @@ type MouseButtonEvent struct {
 
 type MouseScrollEvent struct {
 	Delta int8
+}
+
+type MouseAbsEvent struct {
+	X uint16
+	Y uint16
 }
 
 type TextInputEvent struct {
@@ -114,11 +124,29 @@ func Decode(payload []byte) (Message, error) {
 			},
 		}, nil
 
+	case MsgMouseAbs:
+		if len(data) != 4 {
+			return Message{}, errorf("MOUSE_ABS expects 4 bytes, got %d", len(data))
+		}
+		return Message{
+			Type: MsgMouseAbs,
+			Payload: MouseAbsEvent{
+				X: uint16(data[0])<<8 | uint16(data[1]),
+				Y: uint16(data[2])<<8 | uint16(data[3]),
+			},
+		}, nil
+
+	case MsgClipboardReq:
+		return Message{Type: MsgClipboardReq}, nil
+
 	case MsgTextInput:
 		return Message{
 			Type:    MsgTextInput,
 			Payload: TextInputEvent{Text: string(data)},
 		}, nil
+
+	case MsgDiagReq:
+		return Message{Type: MsgDiagReq}, nil
 
 	case MsgPing:
 		return Message{Type: MsgPing}, nil
@@ -136,6 +164,24 @@ func EncodeACK(status byte) []byte {
 // EncodePing creates a PING payload.
 func EncodePing() []byte {
 	return []byte{MsgPing}
+}
+
+// EncodeDiagData creates a DIAG_DATA response payload.
+func EncodeDiagData(text string) []byte {
+	data := []byte(text)
+	buf := make([]byte, 1+len(data))
+	buf[0] = MsgDiagData
+	copy(buf[1:], data)
+	return buf
+}
+
+// EncodeClipboardData creates a CLIPBOARD_DATA response payload.
+func EncodeClipboardData(text string) []byte {
+	data := []byte(text)
+	buf := make([]byte, 1+len(data))
+	buf[0] = MsgClipboardData
+	copy(buf[1:], data)
+	return buf
 }
 
 func errorf(format string, args ...interface{}) error {

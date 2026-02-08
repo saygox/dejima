@@ -90,6 +90,18 @@ func (c *Controller) SendMouseButton(jsButton int, pressed bool) error {
 	return c.send(msg)
 }
 
+// SendMouseAbs sends an absolute mouse position (0-32767 normalized).
+func (c *Controller) SendMouseAbs(x, y int) error {
+	msg := protocol.Message{
+		Type: protocol.MsgMouseAbs,
+		Payload: protocol.MouseAbsEvent{
+			X: uint16(x),
+			Y: uint16(y),
+		},
+	}
+	return c.send(msg)
+}
+
 // SendMouseScroll sends a scroll wheel event.
 func (c *Controller) SendMouseScroll(delta int) error {
 	msg := protocol.Message{

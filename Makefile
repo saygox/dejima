@@ -7,9 +7,11 @@ dev:
 build:
 	wails build
 
-# RPi daemon cross-compilation
+# RPi daemon cross-compilation (embeds build timestamp as version)
 build-rpi:
-	cd rpi-daemon && GOOS=linux GOARCH=arm64 go build -o ../build/bin/kvm-daemon .
+	cd rpi-daemon && GOOS=linux GOARCH=arm64 go build \
+		-ldflags "-X main.buildVersion=$$(date +%Y%m%d-%H%M%S)" \
+		-o ../build/bin/kvm-daemon .
 
 # Deploy RPi daemon to target
 deploy-rpi: build-rpi

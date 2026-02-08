@@ -54,6 +54,19 @@ func Encode(msg Message) ([]byte, error) {
 			byte(ev.Delta),
 		}, nil
 
+	case MsgMouseAbs:
+		ev, ok := msg.Payload.(MouseAbsEvent)
+		if !ok {
+			return nil, fmt.Errorf("invalid payload for MOUSE_ABS")
+		}
+		return []byte{
+			MsgMouseAbs,
+			byte(ev.X >> 8),
+			byte(ev.X & 0xFF),
+			byte(ev.Y >> 8),
+			byte(ev.Y & 0xFF),
+		}, nil
+
 	case MsgTextInput:
 		ev, ok := msg.Payload.(TextInputEvent)
 		if !ok {
@@ -64,6 +77,12 @@ func Encode(msg Message) ([]byte, error) {
 		buf[0] = MsgTextInput
 		copy(buf[1:], textBytes)
 		return buf, nil
+
+	case MsgClipboardReq:
+		return []byte{MsgClipboardReq}, nil
+
+	case MsgDiagReq:
+		return []byte{MsgDiagReq}, nil
 
 	case MsgACK:
 		ev, ok := msg.Payload.(ACKEvent)

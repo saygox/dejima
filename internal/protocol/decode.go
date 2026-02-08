@@ -60,6 +60,30 @@ func Decode(payload []byte) (Message, error) {
 			},
 		}, nil
 
+	case MsgMouseAbs:
+		if len(data) != 4 {
+			return Message{}, fmt.Errorf("MOUSE_ABS expects 4 bytes, got %d", len(data))
+		}
+		return Message{
+			Type: MsgMouseAbs,
+			Payload: MouseAbsEvent{
+				X: uint16(data[0])<<8 | uint16(data[1]),
+				Y: uint16(data[2])<<8 | uint16(data[3]),
+			},
+		}, nil
+
+	case MsgClipboardData:
+		return Message{
+			Type:    MsgClipboardData,
+			Payload: ClipboardDataEvent{Text: string(data)},
+		}, nil
+
+	case MsgDiagData:
+		return Message{
+			Type:    MsgDiagData,
+			Payload: DiagDataEvent{Text: string(data)},
+		}, nil
+
 	case MsgACK:
 		if len(data) != 1 {
 			return Message{}, fmt.Errorf("ACK expects 1 byte, got %d", len(data))

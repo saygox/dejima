@@ -3,15 +3,32 @@ package injector
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"github.com/bendahl/uinput"
+)
+
+// AbsMax is the maximum value for absolute positioning (0 to AbsMax).
+const AbsMax = 32767
+
+// displayBackend describes whether we talk to Wayland or X11.
+type displayBackend int
+
+const (
+	backendX11 displayBackend = iota
+	backendWayland
 )
 
 // Injector manages virtual keyboard and mouse devices via uinput.
 type Injector struct {
 	keyboard uinput.Keyboard
 	mouse    uinput.Mouse
+	touchpad uinput.TouchPad
+	backend  displayBackend
+	env      []string // environment for subprocess calls
 }
 
 // New creates a new uinput Injector.
@@ -28,8 +45,102 @@ func New() (*Injector, error) {
 		return nil, fmt.Errorf("creating virtual mouse: %w", err)
 	}
 
-	log.Printf("injector: virtual devices created")
-	return &Injector{keyboard: kb, mouse: mouse}, nil
+	tp, err := uinput.CreateTouchPad("/dev/uinput", []byte("kvm-touchpad"), 0, 0, AbsMax, AbsMax)
+	if err != nil {
+		kb.Close()
+		mouse.Close()
+		return nil, fmt.Errorf("creating virtual touchpad: %w", err)
+	}
+
+	backend, env := detectBackend()
+	log.Printf("injector: virtual devices created (keyboard, mouse, touchpad), backend=%s", backendName(backend))
+
+	return &Injector{keyboard: kb, mouse: mouse, touchpad: tp, backend: backend, env: env}, nil
+}
+
+func backendName(b displayBackend) string {
+	if b == backendWayland {
+		return "wayland"
+	}
+	return "x11"
+}
+
+// detectBackend checks if Wayland or X11 is running and builds the
+// environment variables needed for subprocess calls (wtype, wl-paste, etc.).
+func detectBackend() (displayBackend, []string) {
+	env := os.Environ()
+
+	// Check if WAYLAND_DISPLAY is already set
+	waylandDisplay := envGet(env, "WAYLAND_DISPLAY")
+	if waylandDisplay != "" {
+		env = ensureEnv(env, "WAYLAND_DISPLAY", waylandDisplay)
+		env = ensureXDGRuntime(env)
+		log.Printf("injector: detected wayland (WAYLAND_DISPLAY=%s)", waylandDisplay)
+		return backendWayland, env
+	}
+
+	// Probe: look for wayland socket in common XDG_RUNTIME_DIR locations
+	for _, uid := range []string{"1000", "0"} {
+		dir := "/run/user/" + uid
+		matches, _ := filepath.Glob(dir + "/wayland-*")
+		for _, m := range matches {
+			base := filepath.Base(m)
+			if strings.HasPrefix(base, "wayland-") && !strings.HasSuffix(base, ".lock") {
+				env = ensureEnv(env, "WAYLAND_DISPLAY", base)
+				env = ensureEnv(env, "XDG_RUNTIME_DIR", dir)
+				log.Printf("injector: detected wayland socket %s in %s", base, dir)
+				return backendWayland, env
+			}
+		}
+	}
+
+	// Fallback to X11
+	env = ensureEnv(env, "DISPLAY", ":0")
+	// XAUTHORITY for root running under systemd
+	if envGet(env, "XAUTHORITY") == "" {
+		for _, path := range []string{"/home/pi/.Xauthority", "/root/.Xauthority"} {
+			if _, err := os.Stat(path); err == nil {
+				env = append(env, "XAUTHORITY="+path)
+				break
+			}
+		}
+	}
+	log.Printf("injector: falling back to X11")
+	return backendX11, env
+}
+
+func ensureXDGRuntime(env []string) []string {
+	if envGet(env, "XDG_RUNTIME_DIR") != "" {
+		return env
+	}
+	// Try common paths
+	for _, uid := range []string{"1000", "0"} {
+		dir := "/run/user/" + uid
+		if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+			return append(env, "XDG_RUNTIME_DIR="+dir)
+		}
+	}
+	return env
+}
+
+func envGet(env []string, key string) string {
+	prefix := key + "="
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return e[len(prefix):]
+		}
+	}
+	return ""
+}
+
+func ensureEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return env // already set
+		}
+	}
+	return append(env, prefix+value)
 }
 
 // KeyPress sends a key press event.
@@ -75,17 +186,45 @@ func (inj *Injector) MouseButtonRelease(button byte) error {
 	}
 }
 
+// MouseAbsMove moves the cursor to an absolute position (0-32767 normalized).
+func (inj *Injector) MouseAbsMove(x, y int32) error {
+	return inj.touchpad.MoveTo(x, y)
+}
+
 // MouseScroll sends a vertical scroll event.
 func (inj *Injector) MouseScroll(delta int32) error {
 	return inj.mouse.Wheel(false, delta)
 }
 
-// TypeText types a UTF-8 string using xdotool.
-// This supports Japanese and other non-ASCII characters.
+// GetClipboard reads the current clipboard content.
+// Wayland: wl-paste, X11: xclip
+func (inj *Injector) GetClipboard() (string, error) {
+	var cmd *exec.Cmd
+	if inj.backend == backendWayland {
+		cmd = exec.Command("wl-paste", "--no-newline")
+	} else {
+		cmd = exec.Command("xclip", "-selection", "clipboard", "-o")
+	}
+	cmd.Env = inj.env
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("clipboard read (%s): %w", backendName(inj.backend), err)
+	}
+	return string(out), nil
+}
+
+// TypeText types a UTF-8 string.
+// Wayland: wtype, X11: xdotool
 func (inj *Injector) TypeText(text string) error {
-	cmd := exec.Command("xdotool", "type", "--clearmodifiers", "--", text)
+	var cmd *exec.Cmd
+	if inj.backend == backendWayland {
+		cmd = exec.Command("wtype", "--", text)
+	} else {
+		cmd = exec.Command("xdotool", "type", "--clearmodifiers", "--", text)
+	}
+	cmd.Env = inj.env
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("xdotool type: %w: %s", err, out)
+		return fmt.Errorf("type text (%s): %w: %s", backendName(inj.backend), err, out)
 	}
 	return nil
 }
@@ -97,6 +236,9 @@ func (inj *Injector) Close() {
 	}
 	if inj.mouse != nil {
 		inj.mouse.Close()
+	}
+	if inj.touchpad != nil {
+		inj.touchpad.Close()
 	}
 	log.Printf("injector: virtual devices closed")
 }

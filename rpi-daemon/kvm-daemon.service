@@ -1,13 +1,19 @@
 [Unit]
 Description=KVM-Like HID Daemon
-After=multi-user.target
+After=graphical.target
 
 [Service]
 Type=simple
+# Wayland (Raspberry Pi OS Bookworm+)
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+# X11 fallback (older Raspberry Pi OS)
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
 ExecStart=/usr/local/bin/kvm-daemon -device /dev/ttyAMA0 -baud 115200
 Restart=always
 RestartSec=3
 User=root
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target

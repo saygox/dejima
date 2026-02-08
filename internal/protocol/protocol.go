@@ -6,8 +6,13 @@ const (
 	MsgMouseMove   byte = 0x02
 	MsgMouseButton byte = 0x03
 	MsgMouseScroll byte = 0x04
-	MsgTextInput   byte = 0x05
-	MsgACK         byte = 0x10
+	MsgTextInput        byte = 0x05
+	MsgClipboardReq     byte = 0x06
+	MsgClipboardData    byte = 0x07
+	MsgMouseAbs    byte = 0x08
+	MsgDiagReq     byte = 0x09
+	MsgDiagData    byte = 0x0A
+	MsgACK              byte = 0x10
 	MsgPing        byte = 0xFF
 )
 
@@ -53,6 +58,12 @@ type MouseScrollEvent struct {
 	Delta int8
 }
 
+// MouseAbsEvent represents an absolute mouse position (0-32767 normalized).
+type MouseAbsEvent struct {
+	X uint16
+	Y uint16
+}
+
 // ACKEvent represents an acknowledgment from RPi.
 type ACKEvent struct {
 	Status byte
@@ -60,6 +71,16 @@ type ACKEvent struct {
 
 // TextInputEvent represents a UTF-8 text string to type on the remote.
 type TextInputEvent struct {
+	Text string
+}
+
+// ClipboardDataEvent carries clipboard text from RPi to host.
+type ClipboardDataEvent struct {
+	Text string
+}
+
+// DiagDataEvent carries diagnostic text from RPi to host.
+type DiagDataEvent struct {
 	Text string
 }
 

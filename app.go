@@ -6,9 +6,11 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/saygox/kvm-like/internal/config"
 	"github.com/saygox/kvm-like/internal/hid"
+	"github.com/saygox/kvm-like/internal/protocol"
 	"github.com/saygox/kvm-like/internal/serial"
 	"github.com/saygox/kvm-like/internal/video"
 )
@@ -200,6 +202,11 @@ func (a *App) SendMouseButton(jsButton int, pressed bool) error {
 	return a.hid.SendMouseButton(jsButton, pressed)
 }
 
+// SendMouseAbs sends an absolute mouse position (0-32767 normalized).
+func (a *App) SendMouseAbs(x, y int) error {
+	return a.hid.SendMouseAbs(x, y)
+}
+
 // SendMouseScroll sends a mouse scroll event.
 func (a *App) SendMouseScroll(delta int) error {
 	return a.hid.SendMouseScroll(delta)
@@ -208,6 +215,80 @@ func (a *App) SendMouseScroll(delta int) error {
 // SendText sends a UTF-8 text string to be typed on the remote machine.
 func (a *App) SendText(text string) error {
 	return a.hid.SendText(text)
+}
+
+// GetRemoteClipboard requests clipboard text from the RPi and returns it.
+func (a *App) GetRemoteClipboard() (string, error) {
+	if a.serialPort == nil {
+		return "", fmt.Errorf("serial not connected")
+	}
+
+	// Send clipboard request
+	payload, err := protocol.Encode(protocol.Message{
+		Type:    protocol.MsgClipboardReq,
+		Payload: nil,
+	})
+	if err != nil {
+		return "", fmt.Errorf("encoding clipboard request: %w", err)
+	}
+	if err := a.serialPort.Write(payload); err != nil {
+		return "", fmt.Errorf("sending clipboard request: %w", err)
+	}
+
+	// Wait for response with timeout
+	select {
+	case text := <-a.serialPort.IncomingClipboard:
+		return text, nil
+	case <-time.After(3 * time.Second):
+		return "", fmt.Errorf("clipboard request timed out")
+	}
+}
+
+// --- Diagnostics ---
+
+// GetRemoteDiag requests diagnostic info from the RPi daemon and returns it as text.
+func (a *App) GetRemoteDiag() (string, error) {
+	if a.serialPort == nil {
+		return "", fmt.Errorf("serial not connected")
+	}
+
+	// Drain any stale diag data
+	for {
+		select {
+		case <-a.serialPort.IncomingDiag:
+		default:
+			goto drained
+		}
+	}
+drained:
+
+	payload, err := protocol.Encode(protocol.Message{
+		Type: protocol.MsgDiagReq, Payload: nil,
+	})
+	if err != nil {
+		return "", fmt.Errorf("encoding diag request: %w", err)
+	}
+	if err := a.serialPort.Write(payload); err != nil {
+		return "", fmt.Errorf("sending diag request: %w", err)
+	}
+
+	// Collect chunks until empty string (end marker) or timeout
+	var buf []byte
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case chunk := <-a.serialPort.IncomingDiag:
+			if chunk == "" {
+				return string(buf), nil
+			}
+			buf = append(buf, chunk...)
+		case <-timeout:
+			if len(buf) > 0 {
+				return string(buf), nil
+			}
+			return "", fmt.Errorf("diagnostic request timed out")
+		}
+	}
 }
 
 // --- Config ---

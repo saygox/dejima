@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { startKeyboardCapture, stopKeyboardCapture, releaseAllKeys } from '../input/keyboard';
-  import { startMouseCapture, stopMouseCapture, enterCapture, exitCapture, isCapturing } from '../input/mouse';
+  import { startMouseCapture, stopMouseCapture, enterCapture, exitCapture } from '../input/mouse';
   import { connection } from '../stores/connection';
   import { GetStreamURL, SendText } from '../../../wailsjs/go/main/App';
 
@@ -11,10 +11,10 @@
   let streamURL = '';
   let composing = false;
 
-  function onContainerClick() {
+  function onContainerClick(e: MouseEvent) {
     if (!captured) {
       captured = true;
-      enterCapture();
+      enterCapture(e.clientX, e.clientY);
     }
     // Focus the hidden textarea so it receives IME input
     imeInput?.focus();
@@ -22,10 +22,16 @@
 
   function onKeyDown(e: KeyboardEvent) {
     if (e.code === 'Escape' && captured) {
-      captured = false;
-      exitCapture();
-      releaseAllKeys();
+      releaseCaptureState();
     }
+  }
+
+  /** Common cleanup when capture is released (Esc, click-outside, pointer lock exit) */
+  function releaseCaptureState() {
+    if (!captured) return;
+    captured = false;
+    exitCapture();
+    releaseAllKeys();
   }
 
   // --- IME handling on the hidden textarea ---
@@ -69,12 +75,9 @@
 
     // keyboard.ts listens on the container; events from textarea bubble up
     startKeyboardCapture(videoContainer);
-    startMouseCapture(videoContainer);
-
-    document.addEventListener('pointerlockchange', () => {
-      if (!document.pointerLockElement && captured && !isCapturing()) {
-        captured = false;
-      }
+    startMouseCapture(videoContainer, () => {
+      // Called by mouse.ts when capture exits (click outside, pointer lock exit)
+      releaseCaptureState();
     });
   });
 
@@ -145,15 +148,30 @@
 
   .ime-input {
     position: absolute;
-    left: -9999px;
-    top: 0;
-    width: 1px;
-    height: 1px;
-    opacity: 0;
-    padding: 0;
-    border: none;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 300px;
+    padding: 4px 8px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid #475569;
+    border-radius: 4px;
+    color: #e2e8f0;
+    font-size: 0.9em;
     outline: none;
     resize: none;
+    text-align: center;
+    z-index: 10;
+  }
+
+  .ime-input:empty:not(:focus),
+  .video-container:not(.captured) .ime-input {
+    opacity: 0;
+    pointer-events: none;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: none;
     overflow: hidden;
   }
 

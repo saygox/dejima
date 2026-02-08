@@ -18,6 +18,14 @@ export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
 
+export function GetRemoteClipboard() {
+  return window['go']['main']['App']['GetRemoteClipboard']();
+}
+
+export function GetRemoteDiag() {
+  return window['go']['main']['App']['GetRemoteDiag']();
+}
+
 export function GetSerialStatus() {
   return window['go']['main']['App']['GetSerialStatus']();
 }
@@ -44,6 +52,10 @@ export function SaveConfig() {
 
 export function SendKeyEvent(arg1, arg2) {
   return window['go']['main']['App']['SendKeyEvent'](arg1, arg2);
+}
+
+export function SendMouseAbs(arg1, arg2) {
+  return window['go']['main']['App']['SendMouseAbs'](arg1, arg2);
 }
 
 export function SendMouseButton(arg1, arg2) {
