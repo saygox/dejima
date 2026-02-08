@@ -389,6 +389,30 @@ func (p *Pipeline) Diag() string {
 		b.Write(verOut)
 	}
 
+	// Plugin availability checks
+	for _, elem := range []string{"ksvideosrc", "avfvideosrc", "fdsink", "jpegenc", "videoconvert"} {
+		inspCmd := exec.Command("gst-inspect-1.0", elem)
+		hideWindow(inspCmd)
+		if err := inspCmd.Run(); err != nil {
+			fmt.Fprintf(&b, "gst-inspect %s: MISSING (%v)\n", elem, err)
+		} else {
+			fmt.Fprintf(&b, "gst-inspect %s: OK\n", elem)
+		}
+	}
+
+	// Test pipeline: videotestsrc → fakesink (no device, no fdsink)
+	fmt.Fprintf(&b, "\n--- test: videotestsrc ! fakesink ---\n")
+	testCmd := exec.Command("gst-launch-1.0", "-e", "videotestsrc", "num-buffers=1", "!", "fakesink")
+	hideWindow(testCmd)
+	if testOut, err := testCmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(&b, "FAIL: %v\n", err)
+		if len(testOut) > 0 {
+			b.Write(testOut)
+		}
+	} else {
+		fmt.Fprintf(&b, "OK\n")
+	}
+
 	fmt.Fprintf(&b, "\n--- GStreamer stderr ---\n")
 	if stderr == "" {
 		b.WriteString("(empty)\n")
