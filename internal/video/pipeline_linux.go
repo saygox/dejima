@@ -11,3 +11,8 @@ func PipelineSourceArgs(deviceIndex int, _ string) []string {
 func DiagSourceElement() string {
 	return "v4l2src"
 }
+
+// PipelineNeedsDecodebin returns false on Linux because v4l2src outputs raw video.
+func PipelineNeedsDecodebin() bool {
+	return false
+}

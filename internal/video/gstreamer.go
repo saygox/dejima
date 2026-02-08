@@ -222,6 +222,10 @@ func (p *Pipeline) Start() error {
 func (p *Pipeline) buildPipelineArgs() []string {
 	args := PipelineSourceArgs(p.config.DeviceIndex, p.config.DevicePath)
 
+	if PipelineNeedsDecodebin() {
+		args = append(args, "!", "decodebin")
+	}
+
 	if p.config.Width > 0 && p.config.Height > 0 {
 		args = append(args, "!", fmt.Sprintf("video/x-raw,width=%d,height=%d", p.config.Width, p.config.Height))
 	}
@@ -391,7 +395,7 @@ func (p *Pipeline) Diag() string {
 	}
 
 	// Plugin availability checks (platform-specific source + common elements)
-	checkElems := []string{DiagSourceElement(), "fdsink", "jpegenc", "videoconvert"}
+	checkElems := []string{DiagSourceElement(), "fdsink", "jpegenc", "videoconvert", "decodebin"}
 	for _, elem := range checkElems {
 		inspCmd := exec.Command("gst-inspect-1.0", elem)
 		hideWindow(inspCmd)
@@ -450,6 +454,33 @@ func (p *Pipeline) Diag() string {
 			_ = devOut
 		} else {
 			fmt.Fprintf(&b, "OK\n")
+		}
+	}
+
+	// Test pipeline 4: actual device → full encode pipeline WITHOUT caps filter
+	if p.config.DevicePath != "" || p.config.DeviceIndex >= 0 {
+		srcArgs := PipelineSourceArgs(p.config.DeviceIndex, p.config.DevicePath)
+		devTestLabel := strings.Join(srcArgs, " ")
+		var decodeLabel string
+		fullArgs := append([]string{"-e"}, srcArgs...)
+		fullArgs = append(fullArgs, "num-buffers=1")
+		if PipelineNeedsDecodebin() {
+			fullArgs = append(fullArgs, "!", "decodebin")
+			decodeLabel = "decodebin ! "
+		}
+		fmt.Fprintf(&b, "\n--- test: %s ! %svideoconvert ! jpegenc ! fdsink fd=1 ---\n", devTestLabel, decodeLabel)
+		fullArgs = append(fullArgs, "!", "videoconvert", "!", "jpegenc", "!", "fdsink", "fd=1")
+		fullCmd := exec.Command("gst-launch-1.0", fullArgs...)
+		hideWindow(fullCmd)
+		var fullStderr bytes.Buffer
+		fullCmd.Stderr = &fullStderr
+		if fullOut, err := fullCmd.Output(); err != nil {
+			fmt.Fprintf(&b, "FAIL: %v\n", err)
+			if fullStderr.Len() > 0 {
+				fmt.Fprintf(&b, "stderr: %s\n", fullStderr.String())
+			}
+		} else {
+			fmt.Fprintf(&b, "OK (%d bytes on stdout)\n", len(fullOut))
 		}
 	}
 

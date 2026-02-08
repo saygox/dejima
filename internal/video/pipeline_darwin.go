@@ -11,3 +11,8 @@ func PipelineSourceArgs(deviceIndex int, _ string) []string {
 func DiagSourceElement() string {
 	return "avfvideosrc"
 }
+
+// PipelineNeedsDecodebin returns false on macOS because avfvideosrc outputs raw video.
+func PipelineNeedsDecodebin() bool {
+	return false
+}
