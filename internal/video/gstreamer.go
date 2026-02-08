@@ -389,8 +389,9 @@ func (p *Pipeline) Diag() string {
 		b.Write(verOut)
 	}
 
-	// Plugin availability checks
-	for _, elem := range []string{"ksvideosrc", "avfvideosrc", "fdsink", "jpegenc", "videoconvert"} {
+	// Plugin availability checks (platform-specific source + common elements)
+	checkElems := []string{DiagSourceElement(), "fdsink", "jpegenc", "videoconvert"}
+	for _, elem := range checkElems {
 		inspCmd := exec.Command("gst-inspect-1.0", elem)
 		hideWindow(inspCmd)
 		if err := inspCmd.Run(); err != nil {
@@ -400,7 +401,7 @@ func (p *Pipeline) Diag() string {
 		}
 	}
 
-	// Test pipeline: videotestsrc → fakesink (no device, no fdsink)
+	// Test pipeline 1: videotestsrc → fakesink (no device, no fdsink)
 	fmt.Fprintf(&b, "\n--- test: videotestsrc ! fakesink ---\n")
 	testCmd := exec.Command("gst-launch-1.0", "-e", "videotestsrc", "num-buffers=1", "!", "fakesink")
 	hideWindow(testCmd)
@@ -411,6 +412,22 @@ func (p *Pipeline) Diag() string {
 		}
 	} else {
 		fmt.Fprintf(&b, "OK\n")
+	}
+
+	// Test pipeline 2: videotestsrc → jpegenc → fdsink fd=1 (tests stdout pipe)
+	fmt.Fprintf(&b, "\n--- test: videotestsrc ! jpegenc ! fdsink fd=1 ---\n")
+	fdsinkCmd := exec.Command("gst-launch-1.0", "-e",
+		"videotestsrc", "num-buffers=1", "!", "jpegenc", "!", "fdsink", "fd=1")
+	hideWindow(fdsinkCmd)
+	var fdsinkStderr bytes.Buffer
+	fdsinkCmd.Stderr = &fdsinkStderr
+	if fdsinkOut, err := fdsinkCmd.Output(); err != nil {
+		fmt.Fprintf(&b, "FAIL: %v\n", err)
+		if fdsinkStderr.Len() > 0 {
+			fmt.Fprintf(&b, "stderr: %s\n", fdsinkStderr.String())
+		}
+	} else {
+		fmt.Fprintf(&b, "OK (%d bytes on stdout)\n", len(fdsinkOut))
 	}
 
 	fmt.Fprintf(&b, "\n--- GStreamer stderr ---\n")
