@@ -34,6 +34,14 @@ export function GetStreamURL() {
   return window['go']['main']['App']['GetStreamURL']();
 }
 
+export function GetVideoDiag() {
+  return window['go']['main']['App']['GetVideoDiag']();
+}
+
+export function GetVideoFrameCount() {
+  return window['go']['main']['App']['GetVideoFrameCount']();
+}
+
 export function GetVideoStatus() {
   return window['go']['main']['App']['GetVideoStatus']();
 }

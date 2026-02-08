@@ -120,6 +120,22 @@ func (a *App) GetVideoStatus() bool {
 	return a.pipeline != nil && a.pipeline.IsRunning()
 }
 
+// GetVideoFrameCount returns the number of frames received (lightweight, for polling).
+func (a *App) GetVideoFrameCount() int {
+	if a.pipeline == nil {
+		return 0
+	}
+	return int(a.pipeline.FrameCount())
+}
+
+// GetVideoDiag returns detailed video pipeline diagnostics.
+func (a *App) GetVideoDiag() string {
+	if a.pipeline == nil {
+		return "Pipeline: not created\nDevice Index: " + fmt.Sprintf("%d", a.cfg.DeviceIndex) + "\nDevice Path: " + fmt.Sprintf("%q", a.cfg.DevicePath)
+	}
+	return a.pipeline.Diag()
+}
+
 // ListVideoDevices returns available video capture devices via GStreamer.
 func (a *App) ListVideoDevices() ([]video.VideoDevice, error) {
 	return video.ListDevices()

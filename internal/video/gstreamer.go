@@ -7,7 +7,9 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // VideoDevice represents a detected video capture device.
@@ -146,12 +148,15 @@ type PipelineConfig struct {
 
 // Pipeline manages a GStreamer subprocess that produces JPEG frames.
 type Pipeline struct {
-	store  *FrameStore
-	config PipelineConfig
-	cmd    *exec.Cmd
-	mu     sync.Mutex
-	running bool
-	stopCh  chan struct{}
+	store      *FrameStore
+	config     PipelineConfig
+	cmd        *exec.Cmd
+	mu         sync.Mutex
+	running    bool
+	stopCh     chan struct{}
+	stderrBuf  bytes.Buffer
+	frameCount uint64 // atomic
+	cmdLine    string
 }
 
 // NewPipeline creates a new GStreamer pipeline controller.
@@ -177,7 +182,8 @@ func (p *Pipeline) Start() error {
 
 	args := p.buildPipelineArgs()
 	cmdArgs := append([]string{"-q", "-e"}, args...)
-	log.Printf("gstreamer: launching: gst-launch-1.0 %v", cmdArgs)
+	p.cmdLine = "gst-launch-1.0 " + strings.Join(cmdArgs, " ")
+	log.Printf("gstreamer: launching: %s", p.cmdLine)
 
 	p.cmd = exec.Command("gst-launch-1.0", cmdArgs...)
 	hideWindow(p.cmd)
@@ -187,8 +193,10 @@ func (p *Pipeline) Start() error {
 		return fmt.Errorf("creating stdout pipe: %w", err)
 	}
 
-	// Capture stderr for diagnostics
-	p.cmd.Stderr = log.Writer()
+	// Capture stderr for diagnostics (log + buffer)
+	p.stderrBuf.Reset()
+	atomic.StoreUint64(&p.frameCount, 0)
+	p.cmd.Stderr = io.MultiWriter(log.Writer(), &p.stderrBuf)
 
 	if err := p.cmd.Start(); err != nil {
 		return fmt.Errorf("starting gst-launch: %w", err)
@@ -243,6 +251,7 @@ func (p *Pipeline) readFrames(r io.Reader) {
 
 		if len(frame) > 0 {
 			p.store.Update(frame)
+			atomic.AddUint64(&p.frameCount, 1)
 		}
 	}
 }
@@ -330,4 +339,35 @@ func (p *Pipeline) IsRunning() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.running
+}
+
+// FrameCount returns the number of frames received so far (atomic).
+func (p *Pipeline) FrameCount() uint64 {
+	return atomic.LoadUint64(&p.frameCount)
+}
+
+// Diag returns diagnostic text about the pipeline state.
+func (p *Pipeline) Diag() string {
+	p.mu.Lock()
+	running := p.running
+	stderr := p.stderrBuf.String()
+	cmdLine := p.cmdLine
+	p.mu.Unlock()
+
+	fc := atomic.LoadUint64(&p.frameCount)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Running: %v\n", running)
+	fmt.Fprintf(&b, "Frames:  %d\n", fc)
+	fmt.Fprintf(&b, "CmdLine: %s\n", cmdLine)
+	fmt.Fprintf(&b, "DeviceIndex: %d\n", p.config.DeviceIndex)
+	fmt.Fprintf(&b, "DevicePath:  %q\n", p.config.DevicePath)
+	fmt.Fprintf(&b, "Resolution:  %dx%d\n", p.config.Width, p.config.Height)
+	fmt.Fprintf(&b, "\n--- GStreamer stderr ---\n")
+	if stderr == "" {
+		b.WriteString("(empty)\n")
+	} else {
+		b.WriteString(stderr)
+	}
+	return b.String()
 }

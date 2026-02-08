@@ -19,6 +19,10 @@ export function GetSerialStatus():Promise<string>;
 
 export function GetStreamURL():Promise<string>;
 
+export function GetVideoDiag():Promise<string>;
+
+export function GetVideoFrameCount():Promise<number>;
+
 export function GetVideoStatus():Promise<boolean>;
 
 export function ListSerialPorts():Promise<Array<string>>;

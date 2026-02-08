@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { ListSerialPorts, ConnectSerial, DisconnectSerial, DetectFT232, GetSerialStatus, GetConfig, SetDevice, SetCaptureResolution, ListVideoDevices } from '../../../wailsjs/go/main/App';
-  import { updateSerial } from '../stores/connection';
+  import { updateSerial, updateVideoDevice } from '../stores/connection';
 
   const dispatch = createEventDispatcher();
 
@@ -48,11 +48,13 @@
       );
       if (match) {
         selectedDeviceKey = `${match.index}:${match.path || ''}`;
+        updateVideoDevice(match.name);
       } else if (videoDevices.length > 0) {
         // No match — auto-select (and save) the first device
         const first = videoDevices[0];
         selectedDeviceKey = `${first.index}:${first.path || ''}`;
         SetDevice(first.index, first.path || '');
+        updateVideoDevice(first.name);
       }
 
       const w = cfg.capture_width || 0;
@@ -112,6 +114,8 @@
   function onDeviceSelect() {
     const [idxStr, ...pathParts] = selectedDeviceKey.split(':');
     SetDevice(parseInt(idxStr) || 0, pathParts.join(':'));
+    const dev = videoDevices.find(d => `${d.index}:${d.path || ''}` === selectedDeviceKey);
+    updateVideoDevice(dev?.name || '');
   }
 
   function onResolutionChange() {

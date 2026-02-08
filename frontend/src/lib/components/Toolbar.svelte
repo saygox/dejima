@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { StartVideo, StopVideo, GetVideoStatus, SendText, GetRemoteClipboard, GetRemoteDiag } from '../../../wailsjs/go/main/App';
+  import { StartVideo, StopVideo, GetVideoStatus, SendText, GetRemoteClipboard, GetRemoteDiag, GetVideoDiag } from '../../../wailsjs/go/main/App';
   import { connection, updateVideo } from '../stores/connection';
   import { createEventDispatcher } from 'svelte';
 
@@ -11,7 +11,10 @@
   let textInput: HTMLTextAreaElement;
   let sending = false;
 
+  let videoError = '';
+
   async function toggleVideo() {
+    videoError = '';
     if (videoRunning) {
       await StopVideo();
       videoRunning = false;
@@ -20,6 +23,7 @@
         await StartVideo();
         videoRunning = true;
       } catch (e) {
+        videoError = `Start Video failed: ${e}`;
         console.error('Failed to start video:', e);
       }
     }
@@ -107,6 +111,32 @@
     e.stopPropagation();
   }
 
+  let showVideoDiag = false;
+  let videoDiagText = '';
+  let videoDiagLoading = false;
+
+  async function runVideoDiag() {
+    videoDiagLoading = true;
+    videoDiagText = '';
+    showVideoDiag = true;
+    try {
+      videoDiagText = await GetVideoDiag();
+    } catch (e) {
+      videoDiagText = `Error: ${e}`;
+    }
+    videoDiagLoading = false;
+  }
+
+  function closeVideoDiag() {
+    showVideoDiag = false;
+    videoDiagText = '';
+  }
+
+  function onVideoDiagKeydown(e: KeyboardEvent) {
+    if (e.code === 'Escape') closeVideoDiag();
+    e.stopPropagation();
+  }
+
   function onTextKeydown(e: KeyboardEvent) {
     // Cmd/Ctrl+Shift+Enter = Paste mode (browser)
     if (e.code === 'Enter' && (e.metaKey || e.ctrlKey) && e.shiftKey) {
@@ -136,6 +166,9 @@
     <button class="btn" on:click={toggleVideo}>
       {videoRunning ? 'Stop Video' : 'Start Video'}
     </button>
+    {#if videoError}
+      <span class="video-error" title={videoError}>Video Error!</span>
+    {/if}
     <button class="btn" on:click={openTextInput} title="Type text (Japanese etc.)">
       Type Text
     </button>
@@ -149,6 +182,9 @@
   <div class="toolbar-right">
     <button class="btn" on:click={toggleFullscreen} title="Toggle fullscreen">
       Fullscreen
+    </button>
+    <button class="btn" on:click={runVideoDiag} title="Video pipeline diagnostics">
+      Video Diag
     </button>
     <button class="btn" on:click={runDiagnostics} title="RPi diagnostics">
       Diag
@@ -207,6 +243,23 @@
   </div>
 {/if}
 
+{#if showVideoDiag}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <div class="text-overlay" on:click|self={closeVideoDiag} on:keydown={onVideoDiagKeydown} role="presentation">
+    <div class="text-dialog diag-dialog">
+      <div class="text-header">
+        <span>Video Pipeline Diagnostics</span>
+        <button class="close-btn" on:click={closeVideoDiag}>&times;</button>
+      </div>
+      <pre class="diag-output">{videoDiagLoading ? 'Fetching video diagnostics...' : videoDiagText}</pre>
+      <div class="text-footer">
+        <span class="hint">Esc to close</span>
+        <button class="btn" on:click={runVideoDiag} disabled={videoDiagLoading}>Refresh</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .toolbar {
     display: flex;
@@ -250,6 +303,12 @@
   .clipboard-status {
     font-size: 0.75em;
     color: #94a3b8;
+  }
+
+  .video-error {
+    font-size: 0.75em;
+    color: #ef4444;
+    cursor: default;
   }
 
   .btn:disabled {
