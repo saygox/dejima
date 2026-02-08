@@ -375,6 +375,20 @@ func (p *Pipeline) Diag() string {
 	fmt.Fprintf(&b, "DeviceIndex: %d\n", p.config.DeviceIndex)
 	fmt.Fprintf(&b, "DevicePath:  %q\n", p.config.DevicePath)
 	fmt.Fprintf(&b, "Resolution:  %dx%d\n", p.config.Width, p.config.Height)
+
+	// GStreamer installation check
+	fmt.Fprintf(&b, "\n--- gst-launch-1.0 --version ---\n")
+	verCmd := exec.Command("gst-launch-1.0", "--version")
+	hideWindow(verCmd)
+	if verOut, err := verCmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(&b, "ERROR: %v\n", err)
+		if len(verOut) > 0 {
+			b.Write(verOut)
+		}
+	} else {
+		b.Write(verOut)
+	}
+
 	fmt.Fprintf(&b, "\n--- GStreamer stderr ---\n")
 	if stderr == "" {
 		b.WriteString("(empty)\n")
