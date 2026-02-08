@@ -1,0 +1,46 @@
+export namespace config {
+	
+	export class Config {
+	    serial_port: string;
+	    baud_rate: number;
+	    device_index: number;
+	    jpeg_quality: number;
+	    capture_width: number;
+	    capture_height: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Config(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.serial_port = source["serial_port"];
+	        this.baud_rate = source["baud_rate"];
+	        this.device_index = source["device_index"];
+	        this.jpeg_quality = source["jpeg_quality"];
+	        this.capture_width = source["capture_width"];
+	        this.capture_height = source["capture_height"];
+	    }
+	}
+
+}
+
+export namespace video {
+	
+	export class VideoDevice {
+	    index: number;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoDevice(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.index = source["index"];
+	        this.name = source["name"];
+	    }
+	}
+
+}
+

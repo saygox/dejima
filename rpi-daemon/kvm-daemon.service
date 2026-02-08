@@ -1,0 +1,13 @@
+[Unit]
+Description=KVM-Like HID Daemon
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/kvm-daemon -device /dev/ttyAMA0 -baud 115200
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target
