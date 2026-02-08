@@ -116,13 +116,14 @@ func parseDeviceMonitorOutput(output string) []VideoDevice {
 	return deduped
 }
 
-// extractQuotedValue extracts the value from a string like `"value" ! ...` or `value ! ...`.
+// extractQuotedValue extracts the value from a string like `"value" ! ...`, `'value' ! ...`, or `value ! ...`.
 func extractQuotedValue(s string) string {
 	if len(s) == 0 {
 		return ""
 	}
-	if s[0] == '"' {
-		end := bytes.IndexByte([]byte(s[1:]), '"')
+	if s[0] == '"' || s[0] == '\'' {
+		quote := s[0]
+		end := bytes.IndexByte([]byte(s[1:]), quote)
 		if end >= 0 {
 			return s[1 : end+1]
 		}
