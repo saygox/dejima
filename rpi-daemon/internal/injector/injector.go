@@ -5,8 +5,10 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/bendahl/uinput"
 )
@@ -24,11 +26,12 @@ const (
 
 // Injector manages virtual keyboard and mouse devices via uinput.
 type Injector struct {
-	keyboard uinput.Keyboard
-	mouse    uinput.Mouse
-	touchpad uinput.TouchPad
-	backend  displayBackend
-	env      []string // environment for subprocess calls
+	keyboard    uinput.Keyboard
+	mouse       uinput.Mouse
+	touchpad    uinput.TouchPad
+	backend     displayBackend
+	env         []string // environment for subprocess calls
+	sessionUser string   // desktop session user (e.g. "pi") for running wtype/wl-paste
 }
 
 // New creates a new uinput Injector.
@@ -52,10 +55,10 @@ func New() (*Injector, error) {
 		return nil, fmt.Errorf("creating virtual touchpad: %w", err)
 	}
 
-	backend, env := detectBackend()
-	log.Printf("injector: virtual devices created (keyboard, mouse, touchpad), backend=%s", backendName(backend))
+	backend, env, sessionUser := detectBackend()
+	log.Printf("injector: virtual devices created (keyboard, mouse, touchpad), backend=%s, session_user=%s", backendName(backend), sessionUser)
 
-	return &Injector{keyboard: kb, mouse: mouse, touchpad: tp, backend: backend, env: env}, nil
+	return &Injector{keyboard: kb, mouse: mouse, touchpad: tp, backend: backend, env: env, sessionUser: sessionUser}, nil
 }
 
 func backendName(b displayBackend) string {
@@ -67,16 +70,21 @@ func backendName(b displayBackend) string {
 
 // detectBackend checks if Wayland or X11 is running and builds the
 // environment variables needed for subprocess calls (wtype, wl-paste, etc.).
-func detectBackend() (displayBackend, []string) {
+// Also returns the username that owns the desktop session.
+func detectBackend() (displayBackend, []string, string) {
 	env := os.Environ()
+	// Ensure UTF-8 locale for subprocess tools (wtype, xdotool, etc.)
+	// systemd services have no locale by default, causing multi-byte corruption.
+	env = ensureEnv(env, "LANG", "C.UTF-8")
 
 	// Check if WAYLAND_DISPLAY is already set
 	waylandDisplay := envGet(env, "WAYLAND_DISPLAY")
 	if waylandDisplay != "" {
 		env = ensureEnv(env, "WAYLAND_DISPLAY", waylandDisplay)
 		env = ensureXDGRuntime(env)
+		sessionUser := detectSessionUser(envGet(env, "XDG_RUNTIME_DIR"))
 		log.Printf("injector: detected wayland (WAYLAND_DISPLAY=%s)", waylandDisplay)
-		return backendWayland, env
+		return backendWayland, env, sessionUser
 	}
 
 	// Probe: look for wayland socket in common XDG_RUNTIME_DIR locations
@@ -88,25 +96,38 @@ func detectBackend() (displayBackend, []string) {
 			if strings.HasPrefix(base, "wayland-") && !strings.HasSuffix(base, ".lock") {
 				env = ensureEnv(env, "WAYLAND_DISPLAY", base)
 				env = ensureEnv(env, "XDG_RUNTIME_DIR", dir)
-				log.Printf("injector: detected wayland socket %s in %s", base, dir)
-				return backendWayland, env
+				sessionUser := detectSessionUser(dir)
+				log.Printf("injector: detected wayland socket %s in %s (user=%s)", base, dir, sessionUser)
+				return backendWayland, env, sessionUser
 			}
 		}
 	}
 
 	// Fallback to X11
 	env = ensureEnv(env, "DISPLAY", ":0")
-	// XAUTHORITY for root running under systemd
 	if envGet(env, "XAUTHORITY") == "" {
-		for _, path := range []string{"/home/pi/.Xauthority", "/root/.Xauthority"} {
-			if _, err := os.Stat(path); err == nil {
-				env = append(env, "XAUTHORITY="+path)
-				break
-			}
+		// Find .Xauthority in any user's home directory
+		if xauth := findXauthority(); xauth != "" {
+			env = append(env, "XAUTHORITY="+xauth)
 		}
 	}
 	log.Printf("injector: falling back to X11")
-	return backendX11, env
+	return backendX11, env, ""
+}
+
+// detectSessionUser finds the username from XDG_RUNTIME_DIR path like /run/user/1000.
+func detectSessionUser(xdgDir string) string {
+	// Extract UID from /run/user/<uid>
+	parts := strings.Split(xdgDir, "/")
+	for i, p := range parts {
+		if p == "user" && i+1 < len(parts) {
+			uid := parts[i+1]
+			if u, err := user.LookupId(uid); err == nil {
+				return u.Username
+			}
+		}
+	}
+	return ""
 }
 
 func ensureXDGRuntime(env []string) []string {
@@ -129,6 +150,20 @@ func envGet(env []string, key string) string {
 		if strings.HasPrefix(e, prefix) {
 			return e[len(prefix):]
 		}
+	}
+	return ""
+}
+
+// findXauthority searches for a .Xauthority file in home directories.
+func findXauthority() string {
+	// Check /root first
+	if _, err := os.Stat("/root/.Xauthority"); err == nil {
+		return "/root/.Xauthority"
+	}
+	// Scan /home/*/
+	matches, _ := filepath.Glob("/home/*/.Xauthority")
+	if len(matches) > 0 {
+		return matches[0]
 	}
 	return ""
 }
@@ -196,16 +231,35 @@ func (inj *Injector) MouseScroll(delta int32) error {
 	return inj.mouse.Wheel(false, delta)
 }
 
+// sessionCmd builds a command that runs as the desktop session user.
+// When the daemon runs as root but the Wayland compositor belongs to
+// another user (e.g. pi), we use "runuser" to switch.
+func (inj *Injector) sessionCmd(name string, args ...string) *exec.Cmd {
+	var cmd *exec.Cmd
+	if inj.sessionUser != "" && isRoot() {
+		// Run as the session user so it can connect to the Wayland compositor
+		allArgs := append([]string{"-u", inj.sessionUser, "--", name}, args...)
+		cmd = exec.Command("runuser", allArgs...)
+	} else {
+		cmd = exec.Command(name, args...)
+	}
+	cmd.Env = inj.env
+	return cmd
+}
+
+func isRoot() bool {
+	return os.Geteuid() == 0
+}
+
 // GetClipboard reads the current clipboard content.
 // Wayland: wl-paste, X11: xclip
 func (inj *Injector) GetClipboard() (string, error) {
 	var cmd *exec.Cmd
 	if inj.backend == backendWayland {
-		cmd = exec.Command("wl-paste", "--no-newline")
+		cmd = inj.sessionCmd("wl-paste", "--no-newline")
 	} else {
-		cmd = exec.Command("xclip", "-selection", "clipboard", "-o")
+		cmd = inj.sessionCmd("xclip", "-selection", "clipboard", "-o")
 	}
-	cmd.Env = inj.env
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("clipboard read (%s): %w", backendName(inj.backend), err)
@@ -213,19 +267,30 @@ func (inj *Injector) GetClipboard() (string, error) {
 	return string(out), nil
 }
 
-// TypeText types a UTF-8 string.
-// Wayland: wtype, X11: xdotool
+// TypeText types a UTF-8 string via clipboard paste.
+// Sets clipboard with wl-copy (Wayland) or xclip (X11), then sends Ctrl+V
+// through uinput. This works in all applications including browser URL bars,
+// which ignore virtual keyboard protocol input (wtype/xdotool).
 func (inj *Injector) TypeText(text string) error {
+	// Set clipboard
 	var cmd *exec.Cmd
 	if inj.backend == backendWayland {
-		cmd = exec.Command("wtype", "--", text)
+		cmd = inj.sessionCmd("wl-copy", "--", text)
 	} else {
-		cmd = exec.Command("xdotool", "type", "--clearmodifiers", "--", text)
+		cmd = inj.sessionCmd("xclip", "-selection", "clipboard")
+		cmd.Stdin = strings.NewReader(text)
 	}
-	cmd.Env = inj.env
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("type text (%s): %w: %s", backendName(inj.backend), err, out)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("set clipboard (%s): %w", backendName(inj.backend), err)
 	}
+
+	// Paste via Ctrl+V through uinput (kernel-level, works everywhere)
+	time.Sleep(50 * time.Millisecond)
+	inj.keyboard.KeyDown(uinput.KeyLeftctrl)
+	inj.keyboard.KeyDown(uinput.KeyV)
+	time.Sleep(30 * time.Millisecond)
+	inj.keyboard.KeyUp(uinput.KeyV)
+	inj.keyboard.KeyUp(uinput.KeyLeftctrl)
 	return nil
 }
 
