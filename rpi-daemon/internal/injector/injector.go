@@ -3,6 +3,7 @@ package injector
 import (
 	"fmt"
 	"log"
+	"os/exec"
 
 	"github.com/bendahl/uinput"
 )
@@ -77,6 +78,16 @@ func (inj *Injector) MouseButtonRelease(button byte) error {
 // MouseScroll sends a vertical scroll event.
 func (inj *Injector) MouseScroll(delta int32) error {
 	return inj.mouse.Wheel(false, delta)
+}
+
+// TypeText types a UTF-8 string using xdotool.
+// This supports Japanese and other non-ASCII characters.
+func (inj *Injector) TypeText(text string) error {
+	cmd := exec.Command("xdotool", "type", "--clearmodifiers", "--", text)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("xdotool type: %w: %s", err, out)
+	}
+	return nil
 }
 
 // Close destroys the virtual devices.

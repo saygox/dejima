@@ -102,6 +102,45 @@ func (c *Controller) SendMouseScroll(delta int) error {
 	return c.send(msg)
 }
 
+// SendText sends a text string for the remote to type via xdotool.
+// Long text is split into chunks to fit within the serial frame limit.
+func (c *Controller) SendText(text string) error {
+	if text == "" {
+		return nil
+	}
+
+	// Max payload = 256 bytes, minus 1 byte for message type = 255 bytes for text.
+	const maxChunk = 200 // conservative to stay well within frame limit
+	data := []byte(text)
+
+	for len(data) > 0 {
+		end := maxChunk
+		if end > len(data) {
+			end = len(data)
+		}
+		// Don't split in the middle of a UTF-8 character
+		for end > 0 && end < len(data) && (data[end]&0xC0) == 0x80 {
+			end--
+		}
+		if end == 0 {
+			end = maxChunk // shouldn't happen, but avoid infinite loop
+		}
+		chunk := string(data[:end])
+		data = data[end:]
+
+		msg := protocol.Message{
+			Type: protocol.MsgTextInput,
+			Payload: protocol.TextInputEvent{
+				Text: chunk,
+			},
+		}
+		if err := c.send(msg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SendPing sends a heartbeat ping.
 func (c *Controller) SendPing() error {
 	msg := protocol.Message{

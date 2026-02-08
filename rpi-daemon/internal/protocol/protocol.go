@@ -8,6 +8,7 @@ const (
 	MsgMouseMove   byte = 0x02
 	MsgMouseButton byte = 0x03
 	MsgMouseScroll byte = 0x04
+	MsgTextInput   byte = 0x05
 	MsgACK         byte = 0x10
 	MsgPing        byte = 0xFF
 )
@@ -45,6 +46,10 @@ type MouseButtonEvent struct {
 
 type MouseScrollEvent struct {
 	Delta int8
+}
+
+type TextInputEvent struct {
+	Text string
 }
 
 type Message struct {
@@ -107,6 +112,12 @@ func Decode(payload []byte) (Message, error) {
 			Payload: MouseScrollEvent{
 				Delta: int8(data[0]),
 			},
+		}, nil
+
+	case MsgTextInput:
+		return Message{
+			Type:    MsgTextInput,
+			Payload: TextInputEvent{Text: string(data)},
 		}, nil
 
 	case MsgPing:

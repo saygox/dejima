@@ -1,33 +1,79 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { startKeyboardCapture, stopKeyboardCapture } from '../input/keyboard';
-  import { startMouseCapture, stopMouseCapture, requestPointerLock, exitPointerLock } from '../input/mouse';
+  import { startKeyboardCapture, stopKeyboardCapture, releaseAllKeys } from '../input/keyboard';
+  import { startMouseCapture, stopMouseCapture, enterCapture, exitCapture, isCapturing } from '../input/mouse';
   import { connection } from '../stores/connection';
-  import { GetStreamURL } from '../../../wailsjs/go/main/App';
+  import { GetStreamURL, SendText } from '../../../wailsjs/go/main/App';
 
   let videoContainer: HTMLElement;
+  let imeInput: HTMLTextAreaElement;
   let captured = false;
   let streamURL = '';
+  let composing = false;
 
   function onContainerClick() {
     if (!captured) {
-      // Only enter pointer lock on click; exit is via Esc (browser default)
-      requestPointerLock(videoContainer);
+      captured = true;
+      enterCapture();
     }
-    // During pointer lock, clicks are handled by mouse.ts as button events
+    // Focus the hidden textarea so it receives IME input
+    imeInput?.focus();
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.code === 'Escape' && captured) {
+      captured = false;
+      exitCapture();
+      releaseAllKeys();
+    }
+  }
+
+  // --- IME handling on the hidden textarea ---
+
+  function onCompositionStart() {
+    composing = true;
+  }
+
+  function onCompositionEnd(e: CompositionEvent) {
+    composing = false;
+    const text = e.data;
+    if (text) {
+      SendText(text).catch(console.error);
+    }
+    // Clear the textarea so it doesn't accumulate
+    if (imeInput) imeInput.value = '';
+  }
+
+  function onImeInput() {
+    // For non-IME input that ends up in the textarea (e.g. on some platforms),
+    // clear it after a tick if we're not composing
+    if (!composing) {
+      setTimeout(() => {
+        if (imeInput && !composing) {
+          imeInput.value = '';
+        }
+      }, 0);
+    }
+  }
+
+  // Keyboard events on the hidden textarea should bubble to keyboard.ts
+  // via the parent container, but we need to handle Esc explicitly
+  function onImeKeydown(e: KeyboardEvent) {
+    if (e.isComposing) return; // let IME handle it
+    // Re-dispatch to the parent so keyboard.ts picks it up
+    // preventDefault + stopPropagation are handled by keyboard.ts
   }
 
   onMount(async () => {
     streamURL = await GetStreamURL();
 
+    // keyboard.ts listens on the container; events from textarea bubble up
     startKeyboardCapture(videoContainer);
     startMouseCapture(videoContainer);
 
     document.addEventListener('pointerlockchange', () => {
-      captured = document.pointerLockElement === videoContainer;
-      // Ensure the element keeps focus while captured
-      if (captured) {
-        videoContainer.focus();
+      if (!document.pointerLockElement && captured && !isCapturing()) {
+        captured = false;
       }
     });
   });
@@ -41,12 +87,28 @@
 <!-- svelte-ignore a11y-no-noninteractive-tabindex a11y-click-events-have-key-events -->
 <div
   class="video-container"
+  class:captured
   bind:this={videoContainer}
   tabindex="0"
   on:click={onContainerClick}
+  on:keydown={onKeyDown}
   on:contextmenu|preventDefault
   role="application"
 >
+  <!-- Hidden textarea for receiving IME composition input -->
+  <textarea
+    bind:this={imeInput}
+    class="ime-input"
+    on:compositionstart={onCompositionStart}
+    on:compositionend={onCompositionEnd}
+    on:input={onImeInput}
+    on:keydown={onImeKeydown}
+    autocomplete="off"
+    autocorrect="off"
+    autocapitalize="off"
+    spellcheck="false"
+  ></textarea>
+
   {#if $connection.videoStreaming}
     <img src={streamURL} alt="Video stream" class="video-stream" draggable="false" />
   {:else}
@@ -71,11 +133,28 @@
     background: #000;
     outline: none;
     overflow: hidden;
-    cursor: pointer;
   }
 
-  .video-container:focus {
+  .video-container:focus-within {
     outline: 2px solid #4a9eff;
+  }
+
+  .video-container.captured {
+    cursor: none;
+  }
+
+  .ime-input {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    padding: 0;
+    border: none;
+    outline: none;
+    resize: none;
+    overflow: hidden;
   }
 
   .video-stream {

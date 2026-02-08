@@ -205,6 +205,11 @@ func (a *App) SendMouseScroll(delta int) error {
 	return a.hid.SendMouseScroll(delta)
 }
 
+// SendText sends a UTF-8 text string to be typed on the remote machine.
+func (a *App) SendText(text string) error {
+	return a.hid.SendText(text)
+}
+
 // --- Config ---
 
 // GetConfig returns the current configuration.

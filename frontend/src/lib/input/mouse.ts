@@ -1,12 +1,18 @@
 import { SendMouseMove, SendMouseButton, SendMouseScroll } from '../../../wailsjs/go/main/App';
 
 let capturing = false;
+let targetElement: HTMLElement | null = null;
 
 // Accumulate mouse deltas and send at throttled rate (~60Hz)
 let accDX = 0;
 let accDY = 0;
 let moveTimer: ReturnType<typeof setTimeout> | null = null;
 const MOUSE_THROTTLE_MS = 16; // ~60 fps
+
+// Track last position for delta calculation (fallback when movementX/Y unavailable)
+let lastX = 0;
+let lastY = 0;
+let hasLast = false;
 
 function flushMouseMove() {
   moveTimer = null;
@@ -20,8 +26,26 @@ function flushMouseMove() {
 
 function onMouseMove(e: MouseEvent) {
   if (!capturing) return;
-  accDX += e.movementX;
-  accDY += e.movementY;
+
+  // Use movementX/Y if available (works both with and without pointer lock)
+  let dx: number;
+  let dy: number;
+  if (e.movementX !== undefined) {
+    dx = e.movementX;
+    dy = e.movementY;
+  } else if (hasLast) {
+    dx = e.clientX - lastX;
+    dy = e.clientY - lastY;
+  } else {
+    dx = 0;
+    dy = 0;
+  }
+  lastX = e.clientX;
+  lastY = e.clientY;
+  hasLast = true;
+
+  accDX += dx;
+  accDY += dy;
   if (!moveTimer) {
     moveTimer = setTimeout(flushMouseMove, MOUSE_THROTTLE_MS);
   }
@@ -49,43 +73,65 @@ function onWheel(e: WheelEvent) {
   }
 }
 
-function onPointerLockChange() {
-  capturing = document.pointerLockElement !== null;
-}
-
-export function requestPointerLock(element: HTMLElement) {
-  element.requestPointerLock();
-}
-
-export function exitPointerLock() {
-  if (document.pointerLockElement) {
-    document.exitPointerLock();
+/** Called by VideoDisplay to enter capture mode */
+export function enterCapture() {
+  capturing = true;
+  hasLast = false;
+  // Try pointer lock for best experience, but don't depend on it
+  if (targetElement) {
+    try {
+      targetElement.requestPointerLock();
+    } catch (_) {
+      // Pointer lock not supported — still works via movementX/clientX fallback
+    }
   }
-  capturing = false;
 }
 
-export function startMouseCapture(element: HTMLElement) {
-  // During pointer lock, mouse events fire on document, not the element.
-  // Listen on both to handle locked and unlocked states.
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mousedown', onMouseDown);
-  document.addEventListener('mouseup', onMouseUp);
-  element.addEventListener('wheel', onWheel, { passive: false });
-  document.addEventListener('pointerlockchange', onPointerLockChange);
-}
-
-export function stopMouseCapture(element: HTMLElement) {
+/** Called by VideoDisplay to exit capture mode */
+export function exitCapture() {
   capturing = false;
+  hasLast = false;
   if (moveTimer) {
     clearTimeout(moveTimer);
     moveTimer = null;
   }
   accDX = 0;
   accDY = 0;
-  exitPointerLock();
+  try {
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    }
+  } catch (_) {
+    // ignore
+  }
+}
+
+export function isCapturing(): boolean {
+  return capturing;
+}
+
+export function startMouseCapture(element: HTMLElement) {
+  targetElement = element;
+  // Listen on document so events fire even with pointer lock
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mousedown', onMouseDown);
+  document.addEventListener('mouseup', onMouseUp);
+  element.addEventListener('wheel', onWheel, { passive: false });
+  // Sync capturing state when pointer lock changes (e.g. user presses Esc)
+  document.addEventListener('pointerlockchange', () => {
+    if (!document.pointerLockElement && capturing) {
+      // Pointer lock was exited (e.g. Esc) — exit capture
+      capturing = false;
+      hasLast = false;
+    }
+  });
+}
+
+export function stopMouseCapture(element: HTMLElement) {
+  exitCapture();
+  targetElement = null;
   document.removeEventListener('mousemove', onMouseMove);
   document.removeEventListener('mousedown', onMouseDown);
   document.removeEventListener('mouseup', onMouseUp);
   element.removeEventListener('wheel', onWheel);
-  document.removeEventListener('pointerlockchange', onPointerLockChange);
 }

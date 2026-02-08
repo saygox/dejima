@@ -6,6 +6,7 @@ const (
 	MsgMouseMove   byte = 0x02
 	MsgMouseButton byte = 0x03
 	MsgMouseScroll byte = 0x04
+	MsgTextInput   byte = 0x05
 	MsgACK         byte = 0x10
 	MsgPing        byte = 0xFF
 )
@@ -55,6 +56,11 @@ type MouseScrollEvent struct {
 // ACKEvent represents an acknowledgment from RPi.
 type ACKEvent struct {
 	Status byte
+}
+
+// TextInputEvent represents a UTF-8 text string to type on the remote.
+type TextInputEvent struct {
+	Text string
 }
 
 // PingEvent represents a heartbeat ping.

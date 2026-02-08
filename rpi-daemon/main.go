@@ -112,6 +112,14 @@ func handleMessage(port *uart.Port, inj *injector.Injector, msg protocol.Message
 		}
 		sendACK(port, protocol.ACKOk)
 
+	case protocol.TextInputEvent:
+		if err := inj.TypeText(ev.Text); err != nil {
+			log.Printf("text input error: %v", err)
+			sendACK(port, protocol.ACKError)
+			return
+		}
+		sendACK(port, protocol.ACKOk)
+
 	default:
 		if msg.Type == protocol.MsgPing {
 			_ = port.WriteFrame(protocol.EncodePing())

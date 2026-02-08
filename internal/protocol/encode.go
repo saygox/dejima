@@ -54,6 +54,17 @@ func Encode(msg Message) ([]byte, error) {
 			byte(ev.Delta),
 		}, nil
 
+	case MsgTextInput:
+		ev, ok := msg.Payload.(TextInputEvent)
+		if !ok {
+			return nil, fmt.Errorf("invalid payload for TEXT_INPUT")
+		}
+		textBytes := []byte(ev.Text)
+		buf := make([]byte, 1+len(textBytes))
+		buf[0] = MsgTextInput
+		copy(buf[1:], textBytes)
+		return buf, nil
+
 	case MsgACK:
 		ev, ok := msg.Payload.(ACKEvent)
 		if !ok {
