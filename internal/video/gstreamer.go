@@ -157,6 +157,7 @@ type Pipeline struct {
 	stderrBuf  bytes.Buffer
 	frameCount uint64 // atomic
 	cmdLine    string
+	exitErr    string
 }
 
 // NewPipeline creates a new GStreamer pipeline controller.
@@ -181,7 +182,7 @@ func (p *Pipeline) Start() error {
 	}
 
 	args := p.buildPipelineArgs()
-	cmdArgs := append([]string{"-q", "-e"}, args...)
+	cmdArgs := append([]string{"-e"}, args...)
 	p.cmdLine = "gst-launch-1.0 " + strings.Join(cmdArgs, " ")
 	log.Printf("gstreamer: launching: %s", p.cmdLine)
 
@@ -195,6 +196,7 @@ func (p *Pipeline) Start() error {
 
 	// Capture stderr for diagnostics (log + buffer)
 	p.stderrBuf.Reset()
+	p.exitErr = ""
 	atomic.StoreUint64(&p.frameCount, 0)
 	p.cmd.Stderr = io.MultiWriter(log.Writer(), &p.stderrBuf)
 
@@ -303,13 +305,21 @@ func readMultipartFrame(r *bufio.Reader) ([]byte, error) {
 }
 
 func (p *Pipeline) waitForExit() {
+	var exitErr error
 	if p.cmd != nil {
-		_ = p.cmd.Wait()
+		exitErr = p.cmd.Wait()
 	}
 	p.mu.Lock()
+	if exitErr != nil {
+		p.exitErr = exitErr.Error()
+	}
 	p.running = false
 	p.mu.Unlock()
-	log.Printf("gstreamer: pipeline exited")
+	if exitErr != nil {
+		log.Printf("gstreamer: pipeline exited with error: %v", exitErr)
+	} else {
+		log.Printf("gstreamer: pipeline exited")
+	}
 }
 
 // Stop terminates the GStreamer pipeline.
@@ -352,12 +362,14 @@ func (p *Pipeline) Diag() string {
 	running := p.running
 	stderr := p.stderrBuf.String()
 	cmdLine := p.cmdLine
+	exitErr := p.exitErr
 	p.mu.Unlock()
 
 	fc := atomic.LoadUint64(&p.frameCount)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "Running: %v\n", running)
+	fmt.Fprintf(&b, "ExitErr: %s\n", exitErr)
 	fmt.Fprintf(&b, "Frames:  %d\n", fc)
 	fmt.Fprintf(&b, "CmdLine: %s\n", cmdLine)
 	fmt.Fprintf(&b, "DeviceIndex: %d\n", p.config.DeviceIndex)
