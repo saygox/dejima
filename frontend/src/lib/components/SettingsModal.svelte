@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { ListSerialPorts, ConnectSerial, DisconnectSerial, DetectFT232, GetSerialStatus, GetConfig, SetDeviceIndex, SetCaptureResolution, ListVideoDevices } from '../../../wailsjs/go/main/App';
+  import { ListSerialPorts, ConnectSerial, DisconnectSerial, DetectFT232, GetSerialStatus, GetConfig, SetDevice, SetCaptureResolution, ListVideoDevices } from '../../../wailsjs/go/main/App';
   import { updateSerial } from '../stores/connection';
 
   const dispatch = createEventDispatcher();
@@ -8,13 +8,14 @@
   interface VideoDevice {
     index: number;
     name: string;
+    path: string;
   }
 
   let serialPorts: string[] = [];
   let selectedPort = '';
   let connectedPort = '';
   let videoDevices: VideoDevice[] = [];
-  let selectedDeviceIndex = 0;
+  let selectedDeviceKey = '0:';
   let selectedResolution = '0x0';
   let error = '';
 
@@ -38,7 +39,22 @@
     }
     try {
       const cfg = await GetConfig();
-      selectedDeviceIndex = cfg.device_index || 0;
+
+      // Match config to an actual device in the list.
+      // On Windows, device_path is the reliable identifier; on macOS/Linux it's device_index.
+      const match = videoDevices.find(d =>
+        (cfg.device_path && d.path === cfg.device_path) ||
+        (!cfg.device_path && d.index === (cfg.device_index || 0))
+      );
+      if (match) {
+        selectedDeviceKey = `${match.index}:${match.path || ''}`;
+      } else if (videoDevices.length > 0) {
+        // No match — auto-select (and save) the first device
+        const first = videoDevices[0];
+        selectedDeviceKey = `${first.index}:${first.path || ''}`;
+        SetDevice(first.index, first.path || '');
+      }
+
       const w = cfg.capture_width || 0;
       const h = cfg.capture_height || 0;
       selectedResolution = (w && h) ? `${w}x${h}` : '0x0';
@@ -94,7 +110,8 @@
   }
 
   function onDeviceSelect() {
-    SetDeviceIndex(selectedDeviceIndex);
+    const [idxStr, ...pathParts] = selectedDeviceKey.split(':');
+    SetDevice(parseInt(idxStr) || 0, pathParts.join(':'));
   }
 
   function onResolutionChange() {
@@ -118,12 +135,12 @@
       <section>
         <h4>Video Capture Device</h4>
         <div class="port-row">
-          <select bind:value={selectedDeviceIndex} on:change={onDeviceSelect}>
+          <select bind:value={selectedDeviceKey} on:change={onDeviceSelect}>
             {#if videoDevices.length === 0}
-              <option value={0}>No devices found</option>
+              <option value="0:">No devices found</option>
             {/if}
             {#each videoDevices as dev}
-              <option value={dev.index}>{dev.name} (index: {dev.index})</option>
+              <option value="{dev.index}:{dev.path || ''}">{dev.name}</option>
             {/each}
           </select>
           <button class="btn" on:click={refreshVideoDevices}>Refresh</button>

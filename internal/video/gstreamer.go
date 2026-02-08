@@ -14,11 +14,13 @@ import (
 type VideoDevice struct {
 	Index int    `json:"index"`
 	Name  string `json:"name"`
+	Path  string `json:"path"` // Windows ksvideosrc device-path
 }
 
 // ListDevices runs gst-device-monitor-1.0 to enumerate Video/Source devices.
 func ListDevices() ([]VideoDevice, error) {
 	cmd := exec.Command("gst-device-monitor-1.0", "Video/Source")
+	hideWindow(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("running gst-device-monitor-1.0: %w", err)
@@ -26,13 +28,16 @@ func ListDevices() ([]VideoDevice, error) {
 	return parseDeviceMonitorOutput(string(out)), nil
 }
 
-// parseDeviceMonitorOutput extracts device names and indices from
+// parseDeviceMonitorOutput extracts device names and indices/paths from
 // gst-device-monitor-1.0 output.
+// macOS/Linux: "avfvideosrc device-index=0" / "v4l2src device-index=0"
+// Windows:     "ksvideosrc device-path=\"\\\\?\\usb#...\""
 func parseDeviceMonitorOutput(output string) []VideoDevice {
 	var devices []VideoDevice
 	lines := bytes.Split([]byte(output), []byte("\n"))
 
 	var currentName string
+	deviceCount := 0
 	for _, line := range lines {
 		s := string(bytes.TrimSpace(line))
 
@@ -64,6 +69,24 @@ func parseDeviceMonitorOutput(output string) []VideoDevice {
 				})
 			}
 			currentName = ""
+			deviceCount++
+			continue
+		}
+
+		// "gst-launch-1.0 ksvideosrc device-path=\"\\?\usb#...\" ! ..."
+		if currentName != "" && bytes.Contains(line, []byte("device-path=")) {
+			idx := bytes.Index(line, []byte("device-path="))
+			if idx >= 0 {
+				rest := string(line[idx+len("device-path="):])
+				path := extractQuotedValue(rest)
+				devices = append(devices, VideoDevice{
+					Index: deviceCount,
+					Name:  currentName,
+					Path:  path,
+				})
+			}
+			currentName = ""
+			deviceCount++
 			continue
 		}
 
@@ -71,19 +94,54 @@ func parseDeviceMonitorOutput(output string) []VideoDevice {
 		if s == "Device found:" {
 			currentName = ""
 		}
-
-		_ = s // suppress unused
 	}
 
-	return devices
+	// Deduplicate by device name, preferring entries that have a Path (ksvideosrc).
+	nameIdx := make(map[string]int, len(devices))
+	var deduped []VideoDevice
+	for _, d := range devices {
+		if idx, ok := nameIdx[d.Name]; ok {
+			// Replace if existing entry has no Path but new one does.
+			if deduped[idx].Path == "" && d.Path != "" {
+				deduped[idx] = d
+			}
+			continue
+		}
+		nameIdx[d.Name] = len(deduped)
+		deduped = append(deduped, d)
+	}
+
+	return deduped
+}
+
+// extractQuotedValue extracts the value from a string like `"value" ! ...` or `value ! ...`.
+func extractQuotedValue(s string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	if s[0] == '"' {
+		end := bytes.IndexByte([]byte(s[1:]), '"')
+		if end >= 0 {
+			return s[1 : end+1]
+		}
+		return s[1:]
+	}
+	// Unquoted: take until space or !
+	for i, ch := range s {
+		if ch == ' ' || ch == '!' {
+			return s[:i]
+		}
+	}
+	return s
 }
 
 // PipelineConfig holds parameters for building a GStreamer pipeline.
 type PipelineConfig struct {
 	DeviceIndex int
-	Width       int // 0 = auto
-	Height      int // 0 = auto
-	Quality     int // JPEG quality (1-100)
+	DevicePath  string // Windows ksvideosrc device-path (takes priority if non-empty)
+	Width       int    // 0 = auto
+	Height      int    // 0 = auto
+	Quality     int    // JPEG quality (1-100)
 }
 
 // Pipeline manages a GStreamer subprocess that produces JPEG frames.
@@ -122,6 +180,7 @@ func (p *Pipeline) Start() error {
 	log.Printf("gstreamer: launching: gst-launch-1.0 %v", cmdArgs)
 
 	p.cmd = exec.Command("gst-launch-1.0", cmdArgs...)
+	hideWindow(p.cmd)
 
 	stdout, err := p.cmd.StdoutPipe()
 	if err != nil {
@@ -141,8 +200,8 @@ func (p *Pipeline) Start() error {
 	go p.readFrames(stdout)
 	go p.waitForExit()
 
-	log.Printf("gstreamer: pipeline started (device-index=%d, %dx%d)",
-		p.config.DeviceIndex, p.config.Width, p.config.Height)
+	log.Printf("gstreamer: pipeline started (device-index=%d, device-path=%q, %dx%d)",
+		p.config.DeviceIndex, p.config.DevicePath, p.config.Width, p.config.Height)
 	return nil
 }
 
@@ -150,7 +209,7 @@ func (p *Pipeline) Start() error {
 // If Width/Height are set, a caps filter constrains the source resolution.
 // If both are 0, no caps filter is added and GStreamer auto-negotiates.
 func (p *Pipeline) buildPipelineArgs() []string {
-	args := PipelineSourceArgs(p.config.DeviceIndex)
+	args := PipelineSourceArgs(p.config.DeviceIndex, p.config.DevicePath)
 
 	if p.config.Width > 0 && p.config.Height > 0 {
 		args = append(args, "!", fmt.Sprintf("video/x-raw,width=%d,height=%d", p.config.Width, p.config.Height))

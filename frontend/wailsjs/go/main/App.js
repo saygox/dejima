@@ -78,8 +78,8 @@ export function SetCaptureResolution(arg1, arg2) {
   return window['go']['main']['App']['SetCaptureResolution'](arg1, arg2);
 }
 
-export function SetDeviceIndex(arg1) {
-  return window['go']['main']['App']['SetDeviceIndex'](arg1);
+export function SetDevice(arg1, arg2) {
+  return window['go']['main']['App']['SetDevice'](arg1, arg2);
 }
 
 export function StartVideo() {

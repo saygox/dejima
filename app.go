@@ -96,6 +96,7 @@ func (a *App) StartVideo() error {
 
 	a.pipeline = video.NewPipeline(a.store, video.PipelineConfig{
 		DeviceIndex: a.cfg.DeviceIndex,
+		DevicePath:  a.cfg.DevicePath,
 		Width:       a.cfg.CaptureWidth,
 		Height:      a.cfg.CaptureHeight,
 		Quality:     a.cfg.JpegQuality,
@@ -124,9 +125,11 @@ func (a *App) ListVideoDevices() ([]video.VideoDevice, error) {
 	return video.ListDevices()
 }
 
-// SetDeviceIndex changes the video capture device.
-func (a *App) SetDeviceIndex(index int) {
+// SetDevice changes the video capture device by index and path.
+// On Windows, path is used (ksvideosrc device-path); on macOS/Linux, index is used.
+func (a *App) SetDevice(index int, path string) {
 	a.cfg.DeviceIndex = index
+	a.cfg.DevicePath = path
 	_ = a.cfg.Save()
 }
 

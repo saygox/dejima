@@ -12,6 +12,7 @@ type Config struct {
 	SerialPort    string `json:"serial_port"`
 	BaudRate      int    `json:"baud_rate"`
 	DeviceIndex   int    `json:"device_index"`
+	DevicePath    string `json:"device_path"`
 	JpegQuality   int    `json:"jpeg_quality"`
 	CaptureWidth  int    `json:"capture_width"`
 	CaptureHeight int    `json:"capture_height"`
