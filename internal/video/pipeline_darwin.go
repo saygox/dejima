@@ -2,7 +2,7 @@ package video
 
 import "fmt"
 
-// PipelineSource returns the GStreamer source element for macOS.
-func PipelineSource(deviceIndex int) string {
-	return fmt.Sprintf("avfvideosrc device-index=%d", deviceIndex)
+// PipelineSourceArgs returns the GStreamer source element args for macOS.
+func PipelineSourceArgs(deviceIndex int) []string {
+	return []string{"avfvideosrc", fmt.Sprintf("device-index=%d", deviceIndex)}
 }

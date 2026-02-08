@@ -117,11 +117,11 @@ func (p *Pipeline) Start() error {
 		return fmt.Errorf("pipeline already running")
 	}
 
-	pipelineStr := p.buildPipeline()
-	cmdLine := "exec gst-launch-1.0 -q -e " + pipelineStr
-	log.Printf("gstreamer: launching: %s", cmdLine)
+	args := p.buildPipelineArgs()
+	cmdArgs := append([]string{"-q", "-e"}, args...)
+	log.Printf("gstreamer: launching: gst-launch-1.0 %v", cmdArgs)
 
-	p.cmd = exec.Command("sh", "-c", cmdLine)
+	p.cmd = exec.Command("gst-launch-1.0", cmdArgs...)
 
 	stdout, err := p.cmd.StdoutPipe()
 	if err != nil {
@@ -146,19 +146,18 @@ func (p *Pipeline) Start() error {
 	return nil
 }
 
-// buildPipeline constructs a gst-launch pipeline string.
+// buildPipelineArgs constructs gst-launch pipeline arguments as a slice.
 // If Width/Height are set, a caps filter constrains the source resolution.
 // If both are 0, no caps filter is added and GStreamer auto-negotiates.
-func (p *Pipeline) buildPipeline() string {
-	source := PipelineSource(p.config.DeviceIndex)
+func (p *Pipeline) buildPipelineArgs() []string {
+	args := PipelineSourceArgs(p.config.DeviceIndex)
 
-	var caps string
 	if p.config.Width > 0 && p.config.Height > 0 {
-		caps = fmt.Sprintf(" ! video/x-raw,width=%d,height=%d", p.config.Width, p.config.Height)
+		args = append(args, "!", fmt.Sprintf("video/x-raw,width=%d,height=%d", p.config.Width, p.config.Height))
 	}
 
-	return fmt.Sprintf("%s%s ! videoconvert ! jpegenc quality=%d ! fdsink fd=1",
-		source, caps, p.config.Quality)
+	args = append(args, "!", "videoconvert", "!", "jpegenc", fmt.Sprintf("quality=%d", p.config.Quality), "!", "fdsink", "fd=1")
+	return args
 }
 
 // readFrames reads MJPEG multipart data from the gst-launch stdout.

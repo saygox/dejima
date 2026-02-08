@@ -1,4 +1,4 @@
-.PHONY: dev build build-rpi clean install-deps
+.PHONY: dev build build-windows build-rpi clean install-deps
 
 # Host application (Wails)
 dev:
@@ -6,6 +6,9 @@ dev:
 
 build:
 	wails build
+
+build-windows:
+	wails build --platform windows/amd64
 
 # RPi daemon cross-compilation (embeds build timestamp as version)
 build-rpi:
