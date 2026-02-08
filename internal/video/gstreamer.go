@@ -374,7 +374,7 @@ func (p *Pipeline) Diag() string {
 	fmt.Fprintf(&b, "Frames:  %d\n", fc)
 	fmt.Fprintf(&b, "CmdLine: %s\n", cmdLine)
 	fmt.Fprintf(&b, "DeviceIndex: %d\n", p.config.DeviceIndex)
-	fmt.Fprintf(&b, "DevicePath:  %q\n", p.config.DevicePath)
+	fmt.Fprintf(&b, "DevicePath:  %s\n", p.config.DevicePath)
 	fmt.Fprintf(&b, "Resolution:  %dx%d\n", p.config.Width, p.config.Height)
 
 	// GStreamer installation check
@@ -429,6 +429,28 @@ func (p *Pipeline) Diag() string {
 		}
 	} else {
 		fmt.Fprintf(&b, "OK (%d bytes on stdout)\n", len(fdsinkOut))
+	}
+
+	// Test pipeline 3: actual device → fakesink (tests device access)
+	if p.config.DevicePath != "" || p.config.DeviceIndex >= 0 {
+		srcArgs := PipelineSourceArgs(p.config.DeviceIndex, p.config.DevicePath)
+		devTestLabel := strings.Join(srcArgs, " ")
+		fmt.Fprintf(&b, "\n--- test: %s ! fakesink ---\n", devTestLabel)
+		devArgs := append([]string{"-e"}, srcArgs...)
+		devArgs = append(devArgs, "num-buffers=1", "!", "fakesink")
+		devCmd := exec.Command("gst-launch-1.0", devArgs...)
+		hideWindow(devCmd)
+		var devStderr bytes.Buffer
+		devCmd.Stderr = &devStderr
+		if devOut, err := devCmd.Output(); err != nil {
+			fmt.Fprintf(&b, "FAIL: %v\n", err)
+			if devStderr.Len() > 0 {
+				fmt.Fprintf(&b, "stderr: %s\n", devStderr.String())
+			}
+			_ = devOut
+		} else {
+			fmt.Fprintf(&b, "OK\n")
+		}
 	}
 
 	fmt.Fprintf(&b, "\n--- GStreamer stderr ---\n")
