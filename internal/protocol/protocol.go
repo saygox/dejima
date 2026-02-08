@@ -71,7 +71,8 @@ type ACKEvent struct {
 
 // TextInputEvent represents a UTF-8 text string to type on the remote.
 type TextInputEvent struct {
-	Text string
+	Text  string
+	Paste bool // false = type (wtype/xdotool), true = paste (wl-copy + Ctrl+V)
 }
 
 // ClipboardDataEvent carries clipboard text from RPi to host.

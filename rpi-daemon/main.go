@@ -141,7 +141,7 @@ func handleMessage(port *uart.Port, inj *injector.Injector, msg protocol.Message
 		sendACK(port, protocol.ACKOk)
 
 	case protocol.TextInputEvent:
-		if err := inj.TypeText(ev.Text); err != nil {
+		if err := inj.TypeText(ev.Text, ev.Paste); err != nil {
 			log.Printf("text input error: %v", err)
 			sendACK(port, protocol.ACKError)
 			return

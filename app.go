@@ -212,9 +212,10 @@ func (a *App) SendMouseScroll(delta int) error {
 	return a.hid.SendMouseScroll(delta)
 }
 
-// SendText sends a UTF-8 text string to be typed on the remote machine.
-func (a *App) SendText(text string) error {
-	return a.hid.SendText(text)
+// SendText sends a UTF-8 text string to the remote machine.
+// paste=false uses wtype/xdotool (for terminals), paste=true uses wl-copy+Ctrl+V (for browsers).
+func (a *App) SendText(text string, paste bool) error {
+	return a.hid.SendText(text, paste)
 }
 
 // GetRemoteClipboard requests clipboard text from the RPi and returns it.

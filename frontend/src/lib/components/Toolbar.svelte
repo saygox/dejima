@@ -50,11 +50,11 @@
     textToSend = '';
   }
 
-  async function sendText() {
+  async function sendText(paste: boolean) {
     if (!textToSend || sending) return;
     sending = true;
     try {
-      await SendText(textToSend);
+      await SendText(textToSend, paste);
       textToSend = '';
       showTextInput = false;
     } catch (e) {
@@ -108,10 +108,17 @@
   }
 
   function onTextKeydown(e: KeyboardEvent) {
-    // Ctrl/Cmd+Enter to send
+    // Cmd/Ctrl+Shift+Enter = Paste mode (browser)
+    if (e.code === 'Enter' && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+      e.preventDefault();
+      sendText(true);
+      return;
+    }
+    // Cmd/Ctrl+Enter = Type mode (terminal)
     if (e.code === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      sendText();
+      sendText(false);
+      return;
     }
     if (e.code === 'Escape') {
       closeTextInput();
@@ -169,10 +176,15 @@
         rows="3"
       ></textarea>
       <div class="text-footer">
-        <span class="hint">Cmd+Enter で送信 / Esc でキャンセル</span>
-        <button class="btn btn-primary" on:click={sendText} disabled={!textToSend || sending}>
-          Send
-        </button>
+        <span class="hint">Cmd+Enter: Type / Cmd+Shift+Enter: Paste</span>
+        <div class="text-actions">
+          <button class="btn btn-primary" on:click={() => sendText(false)} disabled={!textToSend || sending} title="wtype/xdotool (for terminals)">
+            Type
+          </button>
+          <button class="btn btn-secondary" on:click={() => sendText(true)} disabled={!textToSend || sending} title="wl-copy + Ctrl+V (for browsers)">
+            Paste
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -252,6 +264,20 @@
 
   .btn-primary:hover {
     background: #3b82f6;
+  }
+
+  .btn-secondary {
+    background: #475569;
+    border-color: #64748b;
+  }
+
+  .btn-secondary:hover {
+    background: #64748b;
+  }
+
+  .text-actions {
+    display: flex;
+    gap: 6px;
   }
 
   .text-overlay {

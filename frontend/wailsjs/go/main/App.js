@@ -70,8 +70,8 @@ export function SendMouseScroll(arg1) {
   return window['go']['main']['App']['SendMouseScroll'](arg1);
 }
 
-export function SendText(arg1) {
-  return window['go']['main']['App']['SendText'](arg1);
+export function SendText(arg1, arg2) {
+  return window['go']['main']['App']['SendText'](arg1, arg2);
 }
 
 export function SetCaptureResolution(arg1, arg2) {

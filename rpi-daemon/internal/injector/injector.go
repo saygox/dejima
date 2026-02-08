@@ -267,12 +267,34 @@ func (inj *Injector) GetClipboard() (string, error) {
 	return string(out), nil
 }
 
-// TypeText types a UTF-8 string via clipboard paste.
-// Sets clipboard with wl-copy (Wayland) or xclip (X11), then sends Ctrl+V
-// through uinput. This works in all applications including browser URL bars,
-// which ignore virtual keyboard protocol input (wtype/xdotool).
-func (inj *Injector) TypeText(text string) error {
-	// Set clipboard
+// TypeText sends a UTF-8 string to the focused application.
+// paste=false (Type mode): uses wtype (Wayland) or xdotool (X11) to simulate keystrokes.
+// paste=true (Paste mode): sets clipboard with wl-copy/xclip, then sends Ctrl+V via uinput.
+func (inj *Injector) TypeText(text string, paste bool) error {
+	if paste {
+		return inj.typeTextPaste(text)
+	}
+	return inj.typeTextDirect(text)
+}
+
+// typeTextDirect types text using wtype (Wayland) or xdotool (X11).
+// Works in terminals but may be ignored by browser URL bars.
+func (inj *Injector) typeTextDirect(text string) error {
+	var cmd *exec.Cmd
+	if inj.backend == backendWayland {
+		cmd = inj.sessionCmd("wtype", "--", text)
+	} else {
+		cmd = inj.sessionCmd("xdotool", "type", "--clearmodifiers", "--", text)
+	}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("type text (%s): %w", backendName(inj.backend), err)
+	}
+	return nil
+}
+
+// typeTextPaste types text via clipboard paste (wl-copy/xclip + Ctrl+V).
+// Works in browsers but not in terminals where Ctrl+V has different meaning.
+func (inj *Injector) typeTextPaste(text string) error {
 	var cmd *exec.Cmd
 	if inj.backend == backendWayland {
 		cmd = inj.sessionCmd("wl-copy", "--", text)
@@ -284,7 +306,6 @@ func (inj *Injector) TypeText(text string) error {
 		return fmt.Errorf("set clipboard (%s): %w", backendName(inj.backend), err)
 	}
 
-	// Paste via Ctrl+V through uinput (kernel-level, works everywhere)
 	time.Sleep(50 * time.Millisecond)
 	inj.keyboard.KeyDown(uinput.KeyLeftctrl)
 	inj.keyboard.KeyDown(uinput.KeyV)

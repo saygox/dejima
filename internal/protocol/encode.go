@@ -72,10 +72,15 @@ func Encode(msg Message) ([]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("invalid payload for TEXT_INPUT")
 		}
+		var mode byte
+		if ev.Paste {
+			mode = 0x01
+		}
 		textBytes := []byte(ev.Text)
-		buf := make([]byte, 1+len(textBytes))
+		buf := make([]byte, 2+len(textBytes))
 		buf[0] = MsgTextInput
-		copy(buf[1:], textBytes)
+		buf[1] = mode
+		copy(buf[2:], textBytes)
 		return buf, nil
 
 	case MsgClipboardReq:

@@ -114,15 +114,16 @@ func (c *Controller) SendMouseScroll(delta int) error {
 	return c.send(msg)
 }
 
-// SendText sends a text string for the remote to type via xdotool.
+// SendText sends a text string to the remote.
+// paste=false uses wtype/xdotool (type mode), paste=true uses wl-copy+Ctrl+V (paste mode).
 // Long text is split into chunks to fit within the serial frame limit.
-func (c *Controller) SendText(text string) error {
+func (c *Controller) SendText(text string, paste bool) error {
 	if text == "" {
 		return nil
 	}
 
-	// Max payload = 256 bytes, minus 1 byte for message type = 255 bytes for text.
-	const maxChunk = 200 // conservative to stay well within frame limit
+	// Max payload = 256 bytes, minus 1 byte msg type, minus 1 byte mode = 254 bytes for text.
+	const maxChunk = 199 // conservative to stay well within frame limit
 	data := []byte(text)
 
 	for len(data) > 0 {
@@ -143,7 +144,8 @@ func (c *Controller) SendText(text string) error {
 		msg := protocol.Message{
 			Type: protocol.MsgTextInput,
 			Payload: protocol.TextInputEvent{
-				Text: chunk,
+				Text:  chunk,
+				Paste: paste,
 			},
 		}
 		if err := c.send(msg); err != nil {
