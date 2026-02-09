@@ -15,8 +15,9 @@ let lastX = 0;
 let lastY = 0;
 let hasLast = false;
 
-// Track whether the cursor left the video container (for re-entry sync)
-let wasOutside = false;
+// Skip the first mousemove delta after re-entering the video container
+// (prevents large movementX/Y jump)
+let skipNextDelta = false;
 
 function flushMouseMove() {
   moveTimer = null;
@@ -28,32 +29,26 @@ function flushMouseMove() {
   SendMouseMove(dx, dy).catch(console.error);
 }
 
-function onMouseLeave() {
+function onMouseEnter(e: MouseEvent) {
   if (!capturing) return;
   if (document.pointerLockElement) return;
-  wasOutside = true;
+  const abs = mapToAbsolute(e.clientX, e.clientY);
+  if (abs) {
+    SendMouseAbs(abs.x, abs.y).catch(console.error);
+  }
+  skipNextDelta = true;
 }
 
 function onMouseMove(e: MouseEvent) {
   if (!capturing) return;
-  // Don't send movement if cursor is outside the video container
-  // (unless pointer lock is active, where all movement is relative)
-  if (!document.pointerLockElement && !isInsideTarget(e)) {
-    wasOutside = true;
-    return;
-  }
+  if (!document.pointerLockElement && !isInsideTarget(e)) return;
 
-  // Re-entry: cursor returned to the video container from outside
-  if (wasOutside) {
-    wasOutside = false;
+  if (skipNextDelta) {
+    skipNextDelta = false;
     hasLast = false;
     accDX = 0;
     accDY = 0;
-    const abs = mapToAbsolute(e.clientX, e.clientY);
-    if (abs) {
-      SendMouseAbs(abs.x, abs.y).catch(console.error);
-    }
-    return; // skip relative movement this frame
+    return;
   }
 
   // Use movementX/Y if available (works both with and without pointer lock)
@@ -163,7 +158,7 @@ function mapToAbsolute(clientX: number, clientY: number): { x: number; y: number
 export function enterCapture(clientX?: number, clientY?: number) {
   capturing = true;
   hasLast = false;
-  wasOutside = false;
+  skipNextDelta = false;
 
   // Sync remote cursor to the click position via absolute coords
   if (clientX !== undefined && clientY !== undefined) {
@@ -187,7 +182,7 @@ export function enterCapture(clientX?: number, clientY?: number) {
 export function exitCapture() {
   capturing = false;
   hasLast = false;
-  wasOutside = false;
+  skipNextDelta = false;
   if (moveTimer) {
     clearTimeout(moveTimer);
     moveTimer = null;
@@ -214,7 +209,7 @@ export function startMouseCapture(element: HTMLElement, onExit?: () => void) {
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mousedown', onMouseDown);
   document.addEventListener('mouseup', onMouseUp);
-  document.addEventListener('mouseleave', onMouseLeave);
+  element.addEventListener('mouseenter', onMouseEnter);
   element.addEventListener('wheel', onWheel, { passive: false });
   // Sync capturing state when pointer lock changes (e.g. user presses Esc)
   document.addEventListener('pointerlockchange', () => {
@@ -233,6 +228,6 @@ export function stopMouseCapture(element: HTMLElement) {
   document.removeEventListener('mousemove', onMouseMove);
   document.removeEventListener('mousedown', onMouseDown);
   document.removeEventListener('mouseup', onMouseUp);
-  document.removeEventListener('mouseleave', onMouseLeave);
+  element.removeEventListener('mouseenter', onMouseEnter);
   element.removeEventListener('wheel', onWheel);
 }
