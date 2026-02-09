@@ -28,7 +28,7 @@ const (
 type Injector struct {
 	keyboard    uinput.Keyboard
 	mouse       uinput.Mouse
-	touchpad    uinput.TouchPad
+	absPtr      *absPointer
 	backend     displayBackend
 	env         []string // environment for subprocess calls
 	sessionUser string   // desktop session user (e.g. "pi") for running wtype/wl-paste
@@ -48,17 +48,17 @@ func New() (*Injector, error) {
 		return nil, fmt.Errorf("creating virtual mouse: %w", err)
 	}
 
-	tp, err := uinput.CreateTouchPad("/dev/uinput", []byte("kvm-touchpad"), 0, 0, AbsMax, AbsMax)
+	ap, err := newAbsPointer("kvm-abs-pointer", AbsMax, AbsMax)
 	if err != nil {
 		kb.Close()
 		mouse.Close()
-		return nil, fmt.Errorf("creating virtual touchpad: %w", err)
+		return nil, fmt.Errorf("creating virtual abs pointer: %w", err)
 	}
 
 	backend, env, sessionUser := detectBackend()
-	log.Printf("injector: virtual devices created (keyboard, mouse, touchpad), backend=%s, session_user=%s", backendName(backend), sessionUser)
+	log.Printf("injector: virtual devices created (keyboard, mouse, abs-pointer), backend=%s, session_user=%s", backendName(backend), sessionUser)
 
-	return &Injector{keyboard: kb, mouse: mouse, touchpad: tp, backend: backend, env: env, sessionUser: sessionUser}, nil
+	return &Injector{keyboard: kb, mouse: mouse, absPtr: ap, backend: backend, env: env, sessionUser: sessionUser}, nil
 }
 
 func backendName(b displayBackend) string {
@@ -223,7 +223,7 @@ func (inj *Injector) MouseButtonRelease(button byte) error {
 
 // MouseAbsMove moves the cursor to an absolute position (0-32767 normalized).
 func (inj *Injector) MouseAbsMove(x, y int32) error {
-	return inj.touchpad.MoveTo(x, y)
+	return inj.absPtr.MoveTo(x, y)
 }
 
 // MouseScroll sends a vertical scroll event.
@@ -323,8 +323,8 @@ func (inj *Injector) Close() {
 	if inj.mouse != nil {
 		inj.mouse.Close()
 	}
-	if inj.touchpad != nil {
-		inj.touchpad.Close()
+	if inj.absPtr != nil {
+		inj.absPtr.Close()
 	}
 	log.Printf("injector: virtual devices closed")
 }
