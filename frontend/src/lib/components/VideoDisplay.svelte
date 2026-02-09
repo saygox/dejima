@@ -4,12 +4,14 @@
   import { startMouseCapture, stopMouseCapture, enterCapture, exitCapture } from '../input/mouse';
   import { connection } from '../stores/connection';
   import { GetStreamURL, SendText } from '../../../wailsjs/go/main/App';
+  import { pasteMode } from '../stores/imeMode';
 
   let videoContainer: HTMLElement;
   let imeInput: HTMLTextAreaElement;
   let captured = false;
   let streamURL = '';
   let composing = false;
+  let justComposed = false;
 
   function onContainerClick(e: MouseEvent) {
     if (!captured) {
@@ -42,9 +44,10 @@
 
   function onCompositionEnd(e: CompositionEvent) {
     composing = false;
+    justComposed = true;
     const text = e.data;
     if (text) {
-      SendText(text).catch(console.error);
+      SendText(text, $pasteMode).catch(console.error);
     }
     // Clear the textarea so it doesn't accumulate
     if (imeInput) imeInput.value = '';
@@ -66,8 +69,13 @@
   // via the parent container, but we need to handle Esc explicitly
   function onImeKeydown(e: KeyboardEvent) {
     if (e.isComposing) return; // let IME handle it
-    // Re-dispatch to the parent so keyboard.ts picks it up
-    // preventDefault + stopPropagation are handled by keyboard.ts
+    if (justComposed && e.code === 'Enter') {
+      justComposed = false;
+      e.preventDefault();
+      e.stopPropagation();
+      return; // swallow the Enter that confirmed the composition
+    }
+    justComposed = false;
   }
 
   onMount(async () => {
@@ -102,6 +110,7 @@
   <textarea
     bind:this={imeInput}
     class="ime-input"
+    class:composing
     on:compositionstart={onCompositionStart}
     on:compositionend={onCompositionEnd}
     on:input={onImeInput}
@@ -146,26 +155,15 @@
     cursor: none;
   }
 
+  /* Default: invisible but focusable (for compositionstart detection) */
   .ime-input {
     position: absolute;
     bottom: 40px;
     left: 50%;
     transform: translateX(-50%);
-    width: 300px;
-    padding: 4px 8px;
-    background: rgba(0, 0, 0, 0.7);
-    border: 1px solid #475569;
-    border-radius: 4px;
-    color: #e2e8f0;
-    font-size: 0.9em;
+    z-index: 10;
     outline: none;
     resize: none;
-    text-align: center;
-    z-index: 10;
-  }
-
-  .ime-input:empty:not(:focus),
-  .video-container:not(.captured) .ime-input {
     opacity: 0;
     pointer-events: none;
     width: 1px;
@@ -173,6 +171,28 @@
     padding: 0;
     border: none;
     overflow: hidden;
+  }
+
+  /* Visible only during IME composition */
+  .ime-input.composing {
+    opacity: 1;
+    pointer-events: auto;
+    width: 300px;
+    height: calc(1.5em + 8px);
+    padding: 4px 8px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid #475569;
+    border-radius: 4px;
+    color: #e2e8f0;
+    font-size: 1rem;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  /* Always hidden when not captured */
+  .video-container:not(.captured) .ime-input {
+    opacity: 0;
+    pointer-events: none;
   }
 
   .video-stream {
@@ -220,4 +240,5 @@
     font-size: 0.8em;
     pointer-events: none;
   }
+
 </style>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { connection } from '../stores/connection';
+  import { pasteMode } from '../stores/imeMode';
   import { GetVideoFrameCount } from '../../../wailsjs/go/main/App';
 
   let frameCount = 0;
@@ -57,6 +58,22 @@
     <span class="dot" class:connected={$connection.serialConnected}></span>
     Serial: {$connection.serialConnected ? $connection.serialPort : 'Disconnected'}
   </div>
+
+  <div class="spacer"></div>
+
+  <!-- DIP switch: type / paste mode -->
+  <div class="dip-switch">
+    <span class="dip-label" class:active={!$pasteMode}>TYPE</span>
+    <button
+      class="dip-toggle"
+      class:on={$pasteMode}
+      on:click={() => { $pasteMode = !$pasteMode; }}
+      title={$pasteMode ? 'Paste mode (clipboard + Ctrl+V)' : 'Type mode (wtype/xdotool)'}
+    >
+      <span class="dip-knob" />
+    </button>
+    <span class="dip-label" class:active={$pasteMode}>PASTE</span>
+  </div>
 </div>
 
 <style>
@@ -92,5 +109,62 @@
 
   .dot.warning {
     background: #f59e0b;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+
+  /* DIP switch */
+  .dip-switch {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    user-select: none;
+  }
+
+  .dip-label {
+    font-size: 0.9em;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: #475569;
+    transition: color 0.15s;
+  }
+
+  .dip-label.active {
+    color: #e2e8f0;
+  }
+
+  .dip-toggle {
+    position: relative;
+    width: 24px;
+    height: 12px;
+    background: #334155;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    padding: 0;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .dip-toggle.on {
+    background: #1e40af;
+    border-color: #3b82f6;
+  }
+
+  .dip-knob {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 8px;
+    height: 8px;
+    background: #94a3b8;
+    border-radius: 50%;
+    transition: transform 0.15s, background 0.15s;
+  }
+
+  .dip-toggle.on .dip-knob {
+    transform: translateX(12px);
+    background: #60a5fa;
   }
 </style>
