@@ -1,12 +1,53 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { connection } from '../stores/connection';
+  import { connection, updateVideo, updateSerial } from '../stores/connection';
   import { pasteMode } from '../stores/imeMode';
-  import { GetVideoFrameCount } from '../../../wailsjs/go/main/App';
+  import { GetVideoFrameCount, StartVideo, StopVideo, GetConfig, ConnectSerial, DisconnectSerial, DetectFT232 } from '../../../wailsjs/go/main/App';
 
   let frameCount = 0;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let streamStartTime = 0;
+  let statusError = '';
+  let errorTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function showError(msg: string) {
+    statusError = msg;
+    if (errorTimer) clearTimeout(errorTimer);
+    errorTimer = setTimeout(() => { statusError = ''; }, 3000);
+  }
+
+  async function toggleVideo() {
+    if ($connection.videoStreaming) {
+      await StopVideo();
+      updateVideo(false);
+    } else {
+      try {
+        await StartVideo();
+        updateVideo(true);
+      } catch (e) {
+        showError(`Video: ${e}`);
+      }
+    }
+  }
+
+  async function toggleSerial() {
+    if ($connection.serialConnected) {
+      await DisconnectSerial();
+      updateSerial('');
+    } else {
+      try {
+        const cfg = await GetConfig();
+        let port = cfg.serial_port;
+        if (!port) {
+          port = await DetectFT232();
+        }
+        await ConnectSerial(port);
+        updateSerial(port);
+      } catch (e) {
+        showError(`Serial: ${e}`);
+      }
+    }
+  }
 
   function startPolling() {
     stopPolling();
@@ -37,7 +78,10 @@
     stopPolling();
   }
 
-  onDestroy(() => stopPolling());
+  onDestroy(() => {
+    stopPolling();
+    if (errorTimer) clearTimeout(errorTimer);
+  });
 
   $: noFramesWarning = $connection.videoStreaming && frameCount === 0 && streamStartTime > 0 && (Date.now() - streamStartTime) > 5000;
 
@@ -50,14 +94,19 @@
 </script>
 
 <div class="status-bar">
-  <div class="status-item" title={$connection.videoDeviceName || 'No device selected'}>
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <div class="status-item clickable" on:dblclick={toggleVideo} title="{$connection.videoDeviceName || 'No device selected'} — ダブルクリックで切替" role="button" tabindex="0">
     <span class="dot" class:connected={$connection.videoStreaming} class:warning={noFramesWarning}></span>
     {videoLabel($connection.videoStreaming, frameCount, noFramesWarning)}
   </div>
-  <div class="status-item">
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <div class="status-item clickable" on:dblclick={toggleSerial} title="Serial: {$connection.serialConnected ? $connection.serialPort : 'Disconnected'} — ダブルクリックで切替" role="button" tabindex="0">
     <span class="dot" class:connected={$connection.serialConnected}></span>
     Serial: {$connection.serialConnected ? $connection.serialPort : 'Disconnected'}
   </div>
+  {#if statusError}
+    <span class="status-error">{statusError}</span>
+  {/if}
 
   <div class="spacer"></div>
 
@@ -94,6 +143,22 @@
     align-items: center;
     gap: 6px;
     cursor: default;
+  }
+
+  .status-item.clickable {
+    cursor: pointer;
+    padding: 1px 4px;
+    border-radius: 3px;
+    transition: background 0.15s;
+  }
+
+  .status-item.clickable:hover {
+    background: #1e293b;
+  }
+
+  .status-error {
+    font-size: 0.75em;
+    color: #ef4444;
   }
 
   .dot {

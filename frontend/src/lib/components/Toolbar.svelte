@@ -1,34 +1,13 @@
 <script lang="ts">
-  import { StartVideo, StopVideo, GetVideoStatus, SendText, GetRemoteClipboard, GetRemoteDiag, GetVideoDiag } from '../../../wailsjs/go/main/App';
-  import { connection, updateVideo } from '../stores/connection';
+  import { SendText, GetRemoteClipboard, GetRemoteDiag, GetVideoDiag } from '../../../wailsjs/go/main/App';
   import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher();
 
-  let videoRunning = false;
   let showTextInput = false;
   let textToSend = '';
   let textInput: HTMLTextAreaElement;
   let sending = false;
-
-  let videoError = '';
-
-  async function toggleVideo() {
-    videoError = '';
-    if (videoRunning) {
-      await StopVideo();
-      videoRunning = false;
-    } else {
-      try {
-        await StartVideo();
-        videoRunning = true;
-      } catch (e) {
-        videoError = `Start Video failed: ${e}`;
-        console.error('Failed to start video:', e);
-      }
-    }
-    updateVideo(videoRunning);
-  }
 
   function openSettings() {
     dispatch('settings');
@@ -163,12 +142,6 @@
     <span class="title">KVM-Like</span>
   </div>
   <div class="toolbar-center">
-    <button class="btn" on:click={toggleVideo}>
-      {videoRunning ? 'Stop Video' : 'Start Video'}
-    </button>
-    {#if videoError}
-      <span class="video-error" title={videoError}>Video Error!</span>
-    {/if}
     <button class="btn" on:click={openTextInput} title="Type text (Japanese etc.)">
       Type Text
     </button>
@@ -303,12 +276,6 @@
   .clipboard-status {
     font-size: 0.75em;
     color: #94a3b8;
-  }
-
-  .video-error {
-    font-size: 0.75em;
-    color: #ef4444;
-    cursor: default;
   }
 
   .btn:disabled {
