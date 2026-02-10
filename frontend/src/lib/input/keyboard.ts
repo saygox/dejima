@@ -1,4 +1,5 @@
-import { SendKeyEvent } from '../../../wailsjs/go/main/App';
+import { SendKeyEvent, SendText, GetRemoteClipboard } from '../../../wailsjs/go/main/App';
+import { ClipboardGetText, ClipboardSetText } from '../../../wailsjs/runtime/runtime';
 
 let capturing = false;
 // Track currently pressed keys so we can release them all on capture exit
@@ -8,6 +9,62 @@ const MODIFIER_CODES = new Set([
   'MetaLeft', 'MetaRight', 'ControlLeft', 'ControlRight',
   'AltLeft', 'AltRight', 'ShiftLeft', 'ShiftRight',
 ]);
+
+async function releaseHeldModifiers(): Promise<void> {
+  for (const code of pressedKeys) {
+    // Skip Meta — we never send it to remote (suppressed in onKeyDown)
+    if (MODIFIER_CODES.has(code) && code !== 'MetaLeft' && code !== 'MetaRight') {
+      await SendKeyEvent(code, false);
+    }
+  }
+}
+
+async function handleCtrlV(): Promise<void> {
+  try {
+    const text = await ClipboardGetText();
+    if (text) {
+      await releaseHeldModifiers();
+      await SendText(text, true);
+    } else {
+      // Empty clipboard → pass through Ctrl+V to remote
+      await releaseHeldModifiers();
+      await SendKeyEvent('ControlLeft', true);
+      await SendKeyEvent('KeyV', true);
+      await SendKeyEvent('KeyV', false);
+      await SendKeyEvent('ControlLeft', false);
+    }
+  } catch {
+    await releaseHeldModifiers();
+    await SendKeyEvent('ControlLeft', true);
+    await SendKeyEvent('KeyV', true);
+    await SendKeyEvent('KeyV', false);
+    await SendKeyEvent('ControlLeft', false);
+  }
+}
+
+async function handleCtrlC(): Promise<void> {
+  try {
+    await releaseHeldModifiers();
+    await SendKeyEvent('ControlLeft', true);
+    await SendKeyEvent('KeyC', true);
+    await SendKeyEvent('KeyC', false);
+    await SendKeyEvent('ControlLeft', false);
+  } catch { /* best effort */ }
+  scheduleClipboardSync();
+}
+
+let clipSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleClipboardSync() {
+  if (clipSyncTimer) clearTimeout(clipSyncTimer);
+  clipSyncTimer = setTimeout(async () => {
+    try {
+      const text = await GetRemoteClipboard();
+      if (text) await ClipboardSetText(text);
+    } catch { /* silent */ }
+    clipSyncTimer = null;
+  }, 300);
+}
 
 function onKeyDown(e: KeyboardEvent) {
   // During IME composition, don't send raw key events
@@ -21,6 +78,34 @@ function onKeyDown(e: KeyboardEvent) {
   // Escape is used to exit capture — never send to remote
   if (e.code === 'Escape') return;
   pressedKeys.add(e.code);
+
+  // Cmd+V / Ctrl+V: sync host clipboard → remote paste
+  if (e.code === 'KeyV' && (e.metaKey || e.ctrlKey)) {
+    handleCtrlV();
+    return;
+  }
+
+  // Cmd+C / Ctrl+C: send Ctrl+C to remote, then sync remote clipboard → host
+  if (e.code === 'KeyC' && (e.metaKey || e.ctrlKey)) {
+    handleCtrlC();
+    return;
+  }
+
+  // Don't send Meta (Cmd) to remote — it maps to Super/Win on Linux and
+  // fires immediately before we know if Cmd+V/C will follow.
+  // Use Tools > Send Key for Super if needed.
+  if (e.code === 'MetaLeft' || e.code === 'MetaRight') return;
+
+  // Cmd+key (not C/V, already handled above) → translate to Ctrl+key for remote
+  if (e.metaKey) {
+    SendKeyEvent('ControlLeft', true)
+      .then(() => SendKeyEvent(e.code, true))
+      .then(() => SendKeyEvent(e.code, false))
+      .then(() => SendKeyEvent('ControlLeft', false))
+      .catch(console.error);
+    return;
+  }
+
   SendKeyEvent(e.code, true).catch(console.error);
 }
 
@@ -30,7 +115,11 @@ function onKeyUp(e: KeyboardEvent) {
   e.stopPropagation();
   if (!capturing) return;
   pressedKeys.delete(e.code);
-  SendKeyEvent(e.code, false).catch(console.error);
+
+  // Don't send Meta release — we suppressed the press too
+  if (e.code !== 'MetaLeft' && e.code !== 'MetaRight') {
+    SendKeyEvent(e.code, false).catch(console.error);
+  }
 
   // macOS: keyup for letter keys does NOT fire while Cmd is held.
   // When a modifier is released, flush any non-modifier keys still
