@@ -3,11 +3,13 @@
   import VideoDisplay from './lib/components/VideoDisplay.svelte';
   import Toolbar from './lib/components/Toolbar.svelte';
   import StatusBar from './lib/components/StatusBar.svelte';
-  import SettingsModal from './lib/components/SettingsModal.svelte';
+  import AVSettingsModal from './lib/components/AVSettingsModal.svelte';
+  import SerialSettingsModal from './lib/components/SerialSettingsModal.svelte';
   import { GetConfig, ListVideoDevices, StartVideo, ListSerialPorts, ConnectSerial } from '../wailsjs/go/main/App';
   import { updateVideo, updateVideoDevice, updateSerial } from './lib/stores/connection';
 
-  let showSettings = false;
+  let showAVSettings = false;
+  let showSerialSettings = false;
 
   onMount(async () => {
     const cfg = await GetConfig();
@@ -40,15 +42,19 @@
 </script>
 
 <div class="app-layout">
-  <Toolbar on:settings={() => showSettings = true} />
+  <Toolbar />
   <div class="main-area">
     <VideoDisplay />
   </div>
-  <StatusBar />
+  <StatusBar on:av-settings={() => showAVSettings = true} on:serial-settings={() => showSerialSettings = true} />
 </div>
 
-{#if showSettings}
-  <SettingsModal on:close={() => showSettings = false} />
+{#if showAVSettings}
+  <AVSettingsModal on:close={() => showAVSettings = false} />
+{/if}
+
+{#if showSerialSettings}
+  <SerialSettingsModal on:close={() => showSerialSettings = false} />
 {/if}
 
 <style>

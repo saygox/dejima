@@ -1,8 +1,43 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { connection, updateVideo, updateSerial } from '../stores/connection';
   import { pasteMode } from '../stores/imeMode';
   import { GetVideoFrameCount, StartVideo, StopVideo, GetConfig, ConnectSerial, DisconnectSerial, DetectFT232, GetAudioVolume, GetAudioMuted, SetAudioVolume, SetAudioMuted } from '../../../wailsjs/go/main/App';
+
+  const dispatch = createEventDispatcher();
+
+  let avLongPress: ReturnType<typeof setTimeout> | null = null;
+  let serialLongPress: ReturnType<typeof setTimeout> | null = null;
+
+  function onAVPointerDown() {
+    if ($connection.videoStreaming) return;
+    avLongPress = setTimeout(() => {
+      avLongPress = null;
+      dispatch('av-settings');
+    }, 500);
+  }
+
+  function onAVPointerUp() {
+    if (avLongPress) {
+      clearTimeout(avLongPress);
+      avLongPress = null;
+    }
+  }
+
+  function onSerialPointerDown() {
+    if ($connection.serialConnected) return;
+    serialLongPress = setTimeout(() => {
+      serialLongPress = null;
+      dispatch('serial-settings');
+    }, 500);
+  }
+
+  function onSerialPointerUp() {
+    if (serialLongPress) {
+      clearTimeout(serialLongPress);
+      serialLongPress = null;
+    }
+  }
 
   let frameCount = 0;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -38,7 +73,7 @@
     SetAudioMuted(audioMuted);
   }
 
-  async function toggleVideo() {
+  async function onAVDblClick() {
     if ($connection.videoStreaming) {
       await StopVideo();
       updateVideo(false);
@@ -46,13 +81,13 @@
       try {
         await StartVideo();
         updateVideo(true);
-      } catch (e) {
-        showError(`Video: ${e}`);
+      } catch {
+        dispatch('av-settings');
       }
     }
   }
 
-  async function toggleSerial() {
+  async function onSerialDblClick() {
     if ($connection.serialConnected) {
       await DisconnectSerial();
       updateSerial('');
@@ -65,8 +100,8 @@
         }
         await ConnectSerial(port);
         updateSerial(port);
-      } catch (e) {
-        showError(`Serial: ${e}`);
+      } catch {
+        dispatch('serial-settings');
       }
     }
   }
@@ -103,26 +138,28 @@
   onDestroy(() => {
     stopPolling();
     if (errorTimer) clearTimeout(errorTimer);
+    if (avLongPress) clearTimeout(avLongPress);
+    if (serialLongPress) clearTimeout(serialLongPress);
   });
 
   $: noFramesWarning = $connection.videoStreaming && frameCount === 0 && streamStartTime > 0 && (Date.now() - streamStartTime) > 5000;
 
-  function videoLabel(streaming: boolean, fc: number, warn: boolean): string {
-    if (!streaming) return 'Video: Off';
-    if (warn) return `Video: Streaming (no frames!)`;
-    if (fc > 0) return `Video: Streaming (${fc} frames)`;
-    return 'Video: Streaming';
+  function videoLabel(streaming: boolean, warn: boolean, deviceName: string): string {
+    if (!streaming) return 'AV: Off';
+    if (warn) return 'AV: No signal';
+    if (deviceName) return `AV: ${deviceName}`;
+    return 'AV: Streaming';
   }
 </script>
 
 <div class="status-bar">
   <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <div class="status-item clickable" on:dblclick={toggleVideo} title="{$connection.videoDeviceName || 'No device selected'} — ダブルクリックで切替" role="button" tabindex="0">
+  <div class="status-item clickable" on:dblclick={onAVDblClick} on:pointerdown={onAVPointerDown} on:pointerup={onAVPointerUp} on:pointerleave={onAVPointerUp} title="{$connection.videoStreaming ? 'ダブルクリックで停止' : 'ダブルクリック/長押しで設定'}" role="button" tabindex="0">
     <span class="dot" class:connected={$connection.videoStreaming} class:warning={noFramesWarning}></span>
-    {videoLabel($connection.videoStreaming, frameCount, noFramesWarning)}
+    {videoLabel($connection.videoStreaming, noFramesWarning, $connection.videoDeviceName)}
   </div>
   <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <div class="status-item clickable" on:dblclick={toggleSerial} title="Serial: {$connection.serialConnected ? $connection.serialPort : 'Disconnected'} — ダブルクリックで切替" role="button" tabindex="0">
+  <div class="status-item clickable" on:dblclick={onSerialDblClick} on:pointerdown={onSerialPointerDown} on:pointerup={onSerialPointerUp} on:pointerleave={onSerialPointerUp} title="{$connection.serialConnected ? 'ダブルクリックで切断' : 'ダブルクリック/長押しで設定'}" role="button" tabindex="0">
     <span class="dot" class:connected={$connection.serialConnected}></span>
     Serial: {$connection.serialConnected ? $connection.serialPort : 'Disconnected'}
   </div>

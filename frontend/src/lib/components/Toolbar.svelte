@@ -1,17 +1,9 @@
 <script lang="ts">
   import { SendText, GetRemoteClipboard, GetRemoteDiag, GetVideoDiag } from '../../../wailsjs/go/main/App';
-  import { createEventDispatcher } from 'svelte';
-
-  const dispatch = createEventDispatcher();
-
   let showTextInput = false;
   let textToSend = '';
   let textInput: HTMLTextAreaElement;
   let sending = false;
-
-  function openSettings() {
-    dispatch('settings');
-  }
 
   function toggleFullscreen() {
     if (document.fullscreenElement) {
@@ -161,9 +153,6 @@
     </button>
     <button class="btn" on:click={runDiagnostics} title="RPi diagnostics">
       Diag
-    </button>
-    <button class="btn" on:click={openSettings} title="Settings">
-      Settings
     </button>
   </div>
 </div>

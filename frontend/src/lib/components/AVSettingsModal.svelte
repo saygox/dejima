@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { ListSerialPorts, ConnectSerial, DisconnectSerial, DetectFT232, GetSerialStatus, GetConfig, SetDevice, SetCaptureResolution, ListVideoDevices, ListAudioDevices, SetAudioDevice } from '../../../wailsjs/go/main/App';
-  import { updateSerial, updateVideoDevice } from '../stores/connection';
+  import { ListVideoDevices, ListAudioDevices, GetConfig, SetDevice, SetCaptureResolution, SetAudioDevice, StartVideo } from '../../../wailsjs/go/main/App';
+  import { updateVideo, updateVideoDevice } from '../stores/connection';
 
   const dispatch = createEventDispatcher();
 
@@ -16,13 +16,10 @@
     name: string;
   }
 
-  let serialPorts: string[] = [];
-  let selectedPort = '';
-  let connectedPort = '';
   let videoDevices: VideoDevice[] = [];
+  let audioDevices: AudioDeviceInfo[] = [];
   let selectedDeviceKey = '0:';
   let selectedResolution = '0x0';
-  let audioDevices: AudioDeviceInfo[] = [];
   let error = '';
 
   const resolutions = [
@@ -37,17 +34,9 @@
   ];
 
   onMount(async () => {
-    await Promise.all([refreshPorts(), refreshVideoDevices(), refreshAudioDevices()]);
-    connectedPort = await GetSerialStatus();
-    if (connectedPort) {
-      selectedPort = connectedPort;
-      updateSerial(connectedPort);
-    }
+    await Promise.all([refreshVideoDevices(), refreshAudioDevices()]);
     try {
       const cfg = await GetConfig();
-
-      // Match config to an actual device in the list.
-      // On Windows, device_path is the reliable identifier; on macOS/Linux it's device_index.
       const match = videoDevices.find(d =>
         (cfg.device_path && d.path === cfg.device_path) ||
         (!cfg.device_path && d.index === (cfg.device_index || 0))
@@ -55,13 +44,11 @@
       if (match) {
         selectedDeviceKey = `${match.index}:${match.path || ''}`;
         updateVideoDevice(match.name);
-        // Auto-set matching audio device if not already configured
         if (!cfg.audio_device_id) {
           const audioDev = audioDevices.find(a => a.name === match.name);
           if (audioDev) SetAudioDevice(audioDev.id);
         }
       } else if (videoDevices.length > 0) {
-        // No match — auto-select (and save) the first device
         const first = videoDevices[0];
         selectedDeviceKey = `${first.index}:${first.path || ''}`;
         SetDevice(first.index, first.path || '');
@@ -69,51 +56,13 @@
         const audioDev = audioDevices.find(a => a.name === first.name);
         if (audioDev) SetAudioDevice(audioDev.id);
       }
-
       const w = cfg.capture_width || 0;
       const h = cfg.capture_height || 0;
       selectedResolution = (w && h) ? `${w}x${h}` : '0x0';
-    } catch (e) {
+    } catch {
       // use default
     }
   });
-
-  async function refreshPorts() {
-    try {
-      serialPorts = await ListSerialPorts();
-      error = '';
-    } catch (e) {
-      error = `Failed to list ports: ${e}`;
-    }
-  }
-
-  async function autoDetect() {
-    try {
-      const port = await DetectFT232();
-      selectedPort = port;
-      error = '';
-    } catch (e) {
-      error = `Auto-detect failed: ${e}`;
-    }
-  }
-
-  async function connect() {
-    if (!selectedPort) return;
-    try {
-      await ConnectSerial(selectedPort);
-      connectedPort = selectedPort;
-      updateSerial(connectedPort);
-      error = '';
-    } catch (e) {
-      error = `Connection failed: ${e}`;
-    }
-  }
-
-  async function disconnect() {
-    await DisconnectSerial();
-    connectedPort = '';
-    updateSerial('');
-  }
 
   async function refreshVideoDevices() {
     try {
@@ -122,25 +71,6 @@
     } catch (e) {
       error = `Failed to list video devices: ${e}`;
     }
-  }
-
-  function onDeviceSelect() {
-    const [idxStr, ...pathParts] = selectedDeviceKey.split(':');
-    SetDevice(parseInt(idxStr) || 0, pathParts.join(':'));
-    const dev = videoDevices.find(d => `${d.index}:${d.path || ''}` === selectedDeviceKey);
-    updateVideoDevice(dev?.name || '');
-    // Auto-set matching audio device by name
-    if (dev) {
-      const audioDev = audioDevices.find(a => a.name === dev.name);
-      if (audioDev) {
-        SetAudioDevice(audioDev.id);
-      }
-    }
-  }
-
-  function onResolutionChange() {
-    const [w, h] = selectedResolution.split('x').map(Number);
-    SetCaptureResolution(w, h);
   }
 
   async function refreshAudioDevices() {
@@ -152,6 +82,38 @@
     }
   }
 
+  function onDeviceSelect() {
+    const [idxStr, ...pathParts] = selectedDeviceKey.split(':');
+    SetDevice(parseInt(idxStr) || 0, pathParts.join(':'));
+    const dev = videoDevices.find(d => `${d.index}:${d.path || ''}` === selectedDeviceKey);
+    updateVideoDevice(dev?.name || '');
+    if (dev) {
+      const audioDev = audioDevices.find(a => a.name === dev.name);
+      if (audioDev) SetAudioDevice(audioDev.id);
+    }
+  }
+
+  function onResolutionChange() {
+    const [w, h] = selectedResolution.split('x').map(Number);
+    SetCaptureResolution(w, h);
+  }
+
+  let starting = false;
+
+  async function startAV() {
+    starting = true;
+    try {
+      await StartVideo();
+      const dev = videoDevices.find(d => `${d.index}:${d.path || ''}` === selectedDeviceKey);
+      updateVideo(true);
+      updateVideoDevice(dev?.name || '');
+      dispatch('close');
+    } catch (e) {
+      error = `Failed to start: ${e}`;
+      starting = false;
+    }
+  }
+
   function close() {
     dispatch('close');
   }
@@ -160,55 +122,36 @@
 <div class="overlay" on:click|self={close} role="presentation">
   <div class="modal">
     <div class="modal-header">
-      <h3>Settings</h3>
+      <h3>HDMI Capture Device</h3>
       <button class="close-btn" on:click={close}>&times;</button>
     </div>
 
     <div class="modal-body">
-      <section>
-        <h4>HDMI Capture Device</h4>
-        <div class="port-row">
-          <select bind:value={selectedDeviceKey} on:change={onDeviceSelect}>
-            {#if videoDevices.length === 0}
-              <option value="0:">No devices found</option>
-            {/if}
-            {#each videoDevices as dev}
-              <option value="{dev.index}:{dev.path || ''}">{dev.name}</option>
-            {/each}
-          </select>
-          <button class="btn" on:click={() => { refreshVideoDevices(); refreshAudioDevices(); }}>Refresh</button>
-        </div>
-        <div class="port-row">
-          <select bind:value={selectedResolution} on:change={onResolutionChange}>
-            {#each resolutions as res}
-              <option value={res.value}>{res.label}</option>
-            {/each}
-          </select>
-        </div>
-        <p class="hint">Resolution must not exceed the HDMI source output. Restart video after changing.</p>
-      </section>
-
-      <section>
-        <h4>Serial Connection</h4>
-        <div class="port-row">
-          <select bind:value={selectedPort}>
-            <option value="">Select port...</option>
-            {#each serialPorts as port}
-              <option value={port}>{port}</option>
-            {/each}
-          </select>
-          <button class="btn" on:click={refreshPorts}>Refresh</button>
-          <button class="btn" on:click={autoDetect}>Auto-detect</button>
-        </div>
-        <div class="port-row">
-          {#if connectedPort}
-            <span class="connected-label">Connected: {connectedPort}</span>
-            <button class="btn btn-danger" on:click={disconnect}>Disconnect</button>
-          {:else}
-            <button class="btn btn-primary" on:click={connect} disabled={!selectedPort}>Connect</button>
+      <div class="port-row">
+        <select bind:value={selectedDeviceKey} on:change={onDeviceSelect}>
+          {#if videoDevices.length === 0}
+            <option value="0:">No devices found</option>
           {/if}
-        </div>
-      </section>
+          {#each videoDevices as dev}
+            <option value="{dev.index}:{dev.path || ''}">{dev.name}</option>
+          {/each}
+        </select>
+        <button class="btn" on:click={() => { refreshVideoDevices(); refreshAudioDevices(); }}>Refresh</button>
+      </div>
+      <div class="port-row">
+        <select bind:value={selectedResolution} on:change={onResolutionChange}>
+          {#each resolutions as res}
+            <option value={res.value}>{res.label}</option>
+          {/each}
+        </select>
+      </div>
+      <p class="hint">Resolution must not exceed the HDMI source output.</p>
+
+      <div class="action-row">
+        <button class="btn btn-primary" on:click={startAV} disabled={starting || videoDevices.length === 0}>
+          {starting ? 'Starting...' : 'Start'}
+        </button>
+      </div>
 
       {#if error}
         <div class="error">{error}</div>
@@ -223,16 +166,17 @@
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
     display: flex;
-    align-items: center;
-    justify-content: center;
+    align-items: flex-end;
+    justify-content: flex-start;
     z-index: 100;
+    padding: 0 0 32px 12px;
   }
 
   .modal {
     background: #1e293b;
     border: 1px solid #334155;
     border-radius: 8px;
-    width: 420px;
+    width: 380px;
     max-width: 90vw;
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
   }
@@ -241,13 +185,13 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 12px 16px;
+    padding: 10px 14px;
     border-bottom: 1px solid #334155;
   }
 
   .modal-header h3 {
     margin: 0;
-    font-size: 1em;
+    font-size: 0.9em;
     color: #e2e8f0;
   }
 
@@ -265,17 +209,7 @@
   }
 
   .modal-body {
-    padding: 16px;
-  }
-
-  section {
-    margin-bottom: 16px;
-  }
-
-  h4 {
-    margin: 0 0 8px;
-    font-size: 0.9em;
-    color: #94a3b8;
+    padding: 12px 14px;
   }
 
   select {
@@ -299,11 +233,6 @@
     font-size: 0.75em;
     color: #64748b;
     margin-top: 4px;
-  }
-
-  .connected-label {
-    color: #22c55e;
-    font-size: 0.85em;
   }
 
   .btn {
@@ -335,13 +264,10 @@
     background: #3b82f6;
   }
 
-  .btn-danger {
-    background: #dc2626;
-    border-color: #ef4444;
-  }
-
-  .btn-danger:hover {
-    background: #ef4444;
+  .action-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
   }
 
   .error {
