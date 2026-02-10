@@ -181,6 +181,7 @@
     align-items: center;
     gap: 6px;
     cursor: default;
+    min-width: 200px;
   }
 
   .status-item.clickable {
