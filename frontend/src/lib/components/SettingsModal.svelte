@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { ListSerialPorts, ConnectSerial, DisconnectSerial, DetectFT232, GetSerialStatus, GetConfig, SetDevice, SetCaptureResolution, ListVideoDevices } from '../../../wailsjs/go/main/App';
+  import { ListSerialPorts, ConnectSerial, DisconnectSerial, DetectFT232, GetSerialStatus, GetConfig, SetDevice, SetCaptureResolution, ListVideoDevices, ListAudioDevices, SetAudioDevice } from '../../../wailsjs/go/main/App';
   import { updateSerial, updateVideoDevice } from '../stores/connection';
 
   const dispatch = createEventDispatcher();
@@ -11,12 +11,19 @@
     path: string;
   }
 
+  interface AudioDeviceInfo {
+    id: string;
+    name: string;
+  }
+
   let serialPorts: string[] = [];
   let selectedPort = '';
   let connectedPort = '';
   let videoDevices: VideoDevice[] = [];
   let selectedDeviceKey = '0:';
   let selectedResolution = '0x0';
+  let audioDevices: AudioDeviceInfo[] = [];
+  let selectedAudioID = '';
   let error = '';
 
   const resolutions = [
@@ -31,7 +38,7 @@
   ];
 
   onMount(async () => {
-    await Promise.all([refreshPorts(), refreshVideoDevices()]);
+    await Promise.all([refreshPorts(), refreshVideoDevices(), refreshAudioDevices()]);
     connectedPort = await GetSerialStatus();
     if (connectedPort) {
       selectedPort = connectedPort;
@@ -60,6 +67,8 @@
       const w = cfg.capture_width || 0;
       const h = cfg.capture_height || 0;
       selectedResolution = (w && h) ? `${w}x${h}` : '0x0';
+
+      selectedAudioID = cfg.audio_device_id || '';
     } catch (e) {
       // use default
     }
@@ -123,6 +132,19 @@
     SetCaptureResolution(w, h);
   }
 
+  async function refreshAudioDevices() {
+    try {
+      audioDevices = await ListAudioDevices() || [];
+      error = '';
+    } catch (e) {
+      error = `Failed to list audio devices: ${e}`;
+    }
+  }
+
+  function onAudioDeviceSelect() {
+    SetAudioDevice(selectedAudioID);
+  }
+
   function close() {
     dispatch('close');
   }
@@ -179,6 +201,22 @@
             <button class="btn btn-primary" on:click={connect} disabled={!selectedPort}>Connect</button>
           {/if}
         </div>
+      </section>
+
+      <section>
+        <h4>Audio Capture Device</h4>
+        <div class="port-row">
+          <select bind:value={selectedAudioID} on:change={onAudioDeviceSelect}>
+            {#if audioDevices.length === 0}
+              <option value="">No devices found</option>
+            {/if}
+            {#each audioDevices as dev}
+              <option value={dev.id}>{dev.name}</option>
+            {/each}
+          </select>
+          <button class="btn" on:click={refreshAudioDevices}>Refresh</button>
+        </div>
+        <p class="hint">Restart video to apply audio device changes.</p>
       </section>
 
       {#if error}

@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { connection, updateVideo, updateSerial } from '../stores/connection';
   import { pasteMode } from '../stores/imeMode';
-  import { GetVideoFrameCount, StartVideo, StopVideo, GetConfig, ConnectSerial, DisconnectSerial, DetectFT232 } from '../../../wailsjs/go/main/App';
+  import { GetVideoFrameCount, StartVideo, StopVideo, GetConfig, ConnectSerial, DisconnectSerial, DetectFT232, GetAudioVolume, GetAudioMuted, SetAudioVolume, SetAudioMuted } from '../../../wailsjs/go/main/App';
 
   let frameCount = 0;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -10,10 +10,32 @@
   let statusError = '';
   let errorTimer: ReturnType<typeof setTimeout> | null = null;
 
+  let audioVolume = 80;
+  let audioMuted = false;
+
   function showError(msg: string) {
     statusError = msg;
     if (errorTimer) clearTimeout(errorTimer);
     errorTimer = setTimeout(() => { statusError = ''; }, 3000);
+  }
+
+  onMount(async () => {
+    try {
+      const cfg = await GetConfig();
+      audioVolume = cfg.audio_volume ?? 80;
+      audioMuted = cfg.audio_muted ?? false;
+    } catch {
+      // use defaults
+    }
+  });
+
+  function onVolumeChange() {
+    SetAudioVolume(audioVolume);
+  }
+
+  function toggleMute() {
+    audioMuted = !audioMuted;
+    SetAudioMuted(audioMuted);
   }
 
   async function toggleVideo() {
@@ -110,6 +132,22 @@
 
   <div class="spacer"></div>
 
+  <!-- Volume control -->
+  <div class="volume-control">
+    <button class="vol-btn" class:muted={audioMuted} on:click={toggleMute} title={audioMuted ? 'Unmute' : 'Mute'}>
+      {audioMuted ? 'MUTE' : 'VOL'}
+    </button>
+    <input
+      type="range"
+      class="vol-slider"
+      min="0"
+      max="100"
+      bind:value={audioVolume}
+      on:input={onVolumeChange}
+      title="Volume: {audioVolume}%"
+    />
+  </div>
+
   <!-- DIP switch: type / paste mode -->
   <div class="dip-switch">
     <span class="dip-label" class:active={!$pasteMode}>TYPE</span>
@@ -178,6 +216,72 @@
 
   .spacer {
     flex: 1;
+  }
+
+  /* Volume control */
+  .volume-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .vol-btn {
+    background: none;
+    border: 1px solid #334155;
+    border-radius: 3px;
+    color: #94a3b8;
+    font-size: 0.8em;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 1px 5px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    line-height: 1.2;
+  }
+
+  .vol-btn:hover {
+    color: #e2e8f0;
+    border-color: #475569;
+  }
+
+  .vol-btn.muted {
+    color: #ef4444;
+    border-color: #7f1d1d;
+  }
+
+  .vol-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 64px;
+    height: 4px;
+    background: #334155;
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    background: #94a3b8;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .vol-slider::-webkit-slider-thumb:hover {
+    background: #e2e8f0;
+  }
+
+  .vol-slider::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    background: #94a3b8;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
   }
 
   /* DIP switch */

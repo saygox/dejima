@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/saygox/kvm-like/internal/audio"
 	"github.com/saygox/kvm-like/internal/config"
 	"github.com/saygox/kvm-like/internal/hid"
 	"github.com/saygox/kvm-like/internal/protocol"
@@ -21,6 +22,7 @@ type App struct {
 	cfg        *config.Config
 	store      *video.FrameStore
 	pipeline   *video.Pipeline
+	audioPipe  *audio.Pipeline
 	hid        *hid.Controller
 	serialPort *serial.Port
 	streamAddr string // "http://localhost:<port>" for MJPEG stream
@@ -51,6 +53,7 @@ func (a *App) startup(ctx context.Context) {
 
 // shutdown is called when the Wails app is closing.
 func (a *App) shutdown(ctx context.Context) {
+	a.stopAudio()
 	a.StopVideo()
 	a.DisconnectSerial()
 }
@@ -104,11 +107,15 @@ func (a *App) StartVideo() error {
 	if err := a.pipeline.Start(); err != nil {
 		return err
 	}
+
+	// Start audio (best-effort)
+	a.startAudio()
 	return nil
 }
 
 // StopVideo stops the video capture pipeline.
 func (a *App) StopVideo() {
+	a.stopAudio()
 	if a.pipeline != nil {
 		_ = a.pipeline.Stop()
 		a.pipeline = nil
@@ -155,6 +162,74 @@ func (a *App) SetCaptureResolution(width, height int) {
 	a.cfg.CaptureWidth = width
 	a.cfg.CaptureHeight = height
 	_ = a.cfg.Save()
+}
+
+// --- Audio ---
+
+func (a *App) startAudio() {
+	a.stopAudio()
+	a.audioPipe = audio.NewPipeline()
+	vol := float64(a.cfg.AudioVolume) / 100.0
+	a.audioPipe.SetVolume(vol)
+	a.audioPipe.SetMuted(a.cfg.AudioMuted)
+	if err := a.audioPipe.Start(audio.PipelineConfig{
+		DeviceID: a.cfg.AudioDeviceID,
+	}); err != nil {
+		log.Printf("audio: failed to start: %v", err)
+		a.audioPipe = nil
+	}
+}
+
+func (a *App) stopAudio() {
+	if a.audioPipe != nil {
+		a.audioPipe.Stop()
+		a.audioPipe = nil
+	}
+}
+
+// ListAudioDevices returns available audio capture devices via GStreamer.
+func (a *App) ListAudioDevices() ([]audio.AudioDevice, error) {
+	return audio.ListDevices()
+}
+
+// SetAudioDevice changes the audio capture device ID and saves config.
+func (a *App) SetAudioDevice(id string) {
+	a.cfg.AudioDeviceID = id
+	_ = a.cfg.Save()
+}
+
+// SetAudioVolume sets the audio volume (0-100) and saves config.
+func (a *App) SetAudioVolume(level int) {
+	if level < 0 {
+		level = 0
+	}
+	if level > 100 {
+		level = 100
+	}
+	a.cfg.AudioVolume = level
+	_ = a.cfg.Save()
+	if a.audioPipe != nil {
+		a.audioPipe.SetVolume(float64(level) / 100.0)
+	}
+}
+
+// SetAudioMuted sets the audio mute state and saves config.
+func (a *App) SetAudioMuted(muted bool) {
+	a.cfg.AudioMuted = muted
+	_ = a.cfg.Save()
+	if a.audioPipe != nil {
+		a.audioPipe.SetMuted(muted)
+	}
+}
+
+// GetAudioVolume returns the current audio volume (0-100).
+func (a *App) GetAudioVolume() int {
+	return a.cfg.AudioVolume
+}
+
+// GetAudioMuted returns the current audio mute state.
+func (a *App) GetAudioMuted() bool {
+	return a.cfg.AudioMuted
 }
 
 // --- Serial ---

@@ -14,6 +14,14 @@ export function DisconnectSerial() {
   return window['go']['main']['App']['DisconnectSerial']();
 }
 
+export function GetAudioMuted() {
+  return window['go']['main']['App']['GetAudioMuted']();
+}
+
+export function GetAudioVolume() {
+  return window['go']['main']['App']['GetAudioVolume']();
+}
+
 export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
@@ -44,6 +52,10 @@ export function GetVideoFrameCount() {
 
 export function GetVideoStatus() {
   return window['go']['main']['App']['GetVideoStatus']();
+}
+
+export function ListAudioDevices() {
+  return window['go']['main']['App']['ListAudioDevices']();
 }
 
 export function ListSerialPorts() {
@@ -80,6 +92,18 @@ export function SendMouseScroll(arg1) {
 
 export function SendText(arg1, arg2) {
   return window['go']['main']['App']['SendText'](arg1, arg2);
+}
+
+export function SetAudioDevice(arg1) {
+  return window['go']['main']['App']['SetAudioDevice'](arg1);
+}
+
+export function SetAudioMuted(arg1) {
+  return window['go']['main']['App']['SetAudioMuted'](arg1);
+}
+
+export function SetAudioVolume(arg1) {
+  return window['go']['main']['App']['SetAudioVolume'](arg1);
 }
 
 export function SetCaptureResolution(arg1, arg2) {

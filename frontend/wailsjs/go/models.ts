@@ -1,3 +1,22 @@
+export namespace audio {
+	
+	export class AudioDevice {
+	    id: string;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AudioDevice(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	    }
+	}
+
+}
+
 export namespace config {
 	
 	export class Config {
@@ -8,6 +27,9 @@ export namespace config {
 	    jpeg_quality: number;
 	    capture_width: number;
 	    capture_height: number;
+	    audio_device_id: string;
+	    audio_volume: number;
+	    audio_muted: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -22,6 +44,9 @@ export namespace config {
 	        this.jpeg_quality = source["jpeg_quality"];
 	        this.capture_width = source["capture_width"];
 	        this.capture_height = source["capture_height"];
+	        this.audio_device_id = source["audio_device_id"];
+	        this.audio_volume = source["audio_volume"];
+	        this.audio_muted = source["audio_muted"];
 	    }
 	}
 

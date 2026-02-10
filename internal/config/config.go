@@ -9,13 +9,16 @@ import (
 
 // Config holds persistent application settings.
 type Config struct {
-	SerialPort    string `json:"serial_port"`
-	BaudRate      int    `json:"baud_rate"`
-	DeviceIndex   int    `json:"device_index"`
-	DevicePath    string `json:"device_path"`
-	JpegQuality   int    `json:"jpeg_quality"`
-	CaptureWidth  int    `json:"capture_width"`
-	CaptureHeight int    `json:"capture_height"`
+	SerialPort       string `json:"serial_port"`
+	BaudRate         int    `json:"baud_rate"`
+	DeviceIndex      int    `json:"device_index"`
+	DevicePath       string `json:"device_path"`
+	JpegQuality      int    `json:"jpeg_quality"`
+	CaptureWidth     int    `json:"capture_width"`
+	CaptureHeight    int    `json:"capture_height"`
+	AudioDeviceID    string `json:"audio_device_id"`
+	AudioVolume      int    `json:"audio_volume"` // 0-100, default 80
+	AudioMuted       bool   `json:"audio_muted"`
 }
 
 // DefaultConfig returns a Config with default values.
@@ -27,6 +30,7 @@ func DefaultConfig() *Config {
 		JpegQuality:   80,
 		CaptureWidth:  0,
 		CaptureHeight: 0,
+		AudioVolume:   80,
 	}
 }
 
