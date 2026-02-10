@@ -5,7 +5,7 @@
   import StatusBar from './lib/components/StatusBar.svelte';
   import AVSettingsModal from './lib/components/AVSettingsModal.svelte';
   import SerialSettingsModal from './lib/components/SerialSettingsModal.svelte';
-  import { GetConfig, ListVideoDevices, StartVideo, ListSerialPorts, ConnectSerial, SendText, GetRemoteClipboard, GetRemoteDiag, GetVideoDiag } from '../wailsjs/go/main/App';
+  import { GetConfig, ListVideoDevices, StartVideo, ListSerialPorts, ConnectSerial, SendText, SendKeyEvent, GetRemoteClipboard, GetRemoteDiag, GetVideoDiag } from '../wailsjs/go/main/App';
   import { updateVideo, updateVideoDevice, updateSerial } from './lib/stores/connection';
 
   let showAVSettings = false;
@@ -131,6 +131,28 @@
     e.stopPropagation();
   }
 
+  // --- Send Key (menu) ---
+  const SEND_KEY_MAP: Record<string, string[]> = {
+    'escape':       ['Escape'],
+    'ctrl-alt-del': ['ControlLeft', 'AltLeft', 'Delete'],
+    'alt-tab':      ['AltLeft', 'Tab'],
+    'alt-f4':       ['AltLeft', 'F4'],
+    'printscreen':  ['PrintScreen'],
+    'insert':       ['Insert'],
+    'scrolllock':   ['ScrollLock'],
+    'pause':        ['Pause'],
+  };
+
+  async function sendKeyCombo(codes: string[]) {
+    for (const code of codes) await SendKeyEvent(code, true);
+    for (const code of [...codes].reverse()) await SendKeyEvent(code, false);
+  }
+
+  function handleSendKey(keyId: string) {
+    const codes = SEND_KEY_MAP[keyId];
+    if (codes) sendKeyCombo(codes);
+  }
+
   // --- Menu event listeners ---
   const cancelFns: (() => void)[] = [];
 
@@ -139,6 +161,7 @@
     cancelFns.push(EventsOn('menu:getClipboard', getRemoteClipboard));
     cancelFns.push(EventsOn('menu:videoDiag', runVideoDiag));
     cancelFns.push(EventsOn('menu:rpiDiag', runDiagnostics));
+    cancelFns.push(EventsOn('menu:sendKey', handleSendKey));
 
     const cfg = await GetConfig();
 

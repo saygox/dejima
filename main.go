@@ -38,6 +38,28 @@ func buildAppMenu(app *App) *menu.Menu {
 		wailsRuntime.EventsEmit(app.ctx, "menu:getClipboard")
 	})
 	tools.AddSeparator()
+
+	sendKey := tools.AddSubmenu("Send Key")
+	for _, item := range []struct {
+		label string
+		keyID string
+	}{
+		{"Escape", "escape"},
+		{"Ctrl+Alt+Delete", "ctrl-alt-del"},
+		{"Alt+Tab", "alt-tab"},
+		{"Alt+F4", "alt-f4"},
+		{"PrintScreen", "printscreen"},
+		{"Insert", "insert"},
+		{"ScrollLock", "scrolllock"},
+		{"Pause/Break", "pause"},
+	} {
+		id := item.keyID // capture for closure
+		sendKey.AddText(item.label, nil, func(_ *menu.CallbackData) {
+			wailsRuntime.EventsEmit(app.ctx, "menu:sendKey", id)
+		})
+	}
+
+	tools.AddSeparator()
 	tools.AddText("Video Diagnostics...", nil, func(_ *menu.CallbackData) {
 		wailsRuntime.EventsEmit(app.ctx, "menu:videoDiag")
 	})
