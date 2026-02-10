@@ -5,14 +5,6 @@
   let textInput: HTMLTextAreaElement;
   let sending = false;
 
-  function toggleFullscreen() {
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      document.documentElement.requestFullscreen();
-    }
-  }
-
   function openTextInput() {
     showTextInput = true;
     textToSend = '';
@@ -145,9 +137,6 @@
     {/if}
   </div>
   <div class="toolbar-right">
-    <button class="btn" on:click={toggleFullscreen} title="Toggle fullscreen">
-      Fullscreen
-    </button>
     <button class="btn" on:click={runVideoDiag} title="Video pipeline diagnostics">
       Video Diag
     </button>
