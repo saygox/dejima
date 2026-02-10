@@ -4,11 +4,17 @@
   import { startMouseCapture, stopMouseCapture, enterCapture, exitCapture } from '../input/mouse';
   import { connection } from '../stores/connection';
   import { GetStreamURL, SendText } from '../../../wailsjs/go/main/App';
+  import { WindowSetTitle } from '../../../wailsjs/runtime';
   import { pasteMode } from '../stores/imeMode';
 
   let videoContainer: HTMLElement;
   let imeInput: HTMLTextAreaElement;
+  const TITLE_DEFAULT = 'KVM-Like';
+  const TITLE_CAPTURED = 'KVM-Like — Input captured (Esc to release)';
+
   let captured = false;
+
+  $: WindowSetTitle(captured ? TITLE_CAPTURED : TITLE_DEFAULT);
   let streamURL = '';
   let composing = false;
   let justComposed = false;
@@ -130,11 +136,6 @@
     </div>
   {/if}
 
-  {#if captured}
-    <div class="capture-indicator">Input captured (Esc to release)</div>
-  {:else}
-    <div class="capture-hint">Click to capture input</div>
-  {/if}
 </div>
 
 <style>
@@ -214,31 +215,6 @@
   .no-video .hint {
     font-size: 0.85em;
     color: #555;
-  }
-
-  .capture-indicator {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: rgba(74, 158, 255, 0.8);
-    color: white;
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 0.8em;
-    pointer-events: none;
-  }
-
-  .capture-hint {
-    position: absolute;
-    bottom: 8px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.6);
-    color: #aaa;
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 0.8em;
-    pointer-events: none;
   }
 
 </style>
