@@ -2,8 +2,11 @@ package main
 
 import (
 	"embed"
+	"log"
+	"os"
 	goruntime "runtime"
 
+	"github.com/saygox/dejima/internal/lock"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/menu/keys"
@@ -71,9 +74,16 @@ func buildAppMenu(app *App) *menu.Menu {
 }
 
 func main() {
+	release, err := lock.Acquire()
+	if err != nil {
+		log.Printf("dejima: %v", err)
+		os.Exit(1)
+	}
+	defer release()
+
 	app := NewApp()
 
-	err := wails.Run(&options.App{
+	err = wails.Run(&options.App{
 		Title:  "Dejima",
 		Width:  1280,
 		Height: 720,
