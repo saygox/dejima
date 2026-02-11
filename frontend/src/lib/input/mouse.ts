@@ -103,8 +103,8 @@ function onWheel(e: WheelEvent) {
   if (!capturing) return;
   // Wheel is only registered on the element itself, so no outside check needed
   e.preventDefault();
-  // Normalize to -1/+1
-  const delta = e.deltaY > 0 ? 1 : e.deltaY < 0 ? -1 : 0;
+  // Normalize to -1/+1 (browser deltaY>0 = scroll down, but Linux REL_WHEEL>0 = scroll up)
+  const delta = e.deltaY > 0 ? -1 : e.deltaY < 0 ? 1 : 0;
   if (delta !== 0) {
     SendMouseScroll(delta).catch(console.error);
   }
