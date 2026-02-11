@@ -107,7 +107,7 @@ function scheduleClipboardSync() {
 
 function onKeyDown(e: KeyboardEvent) {
   // During IME composition, don't send raw key events
-  if (e.isComposing) return;
+  if (e.isComposing || e.keyCode === 229) return;
   // Always prevent default to suppress beep on macOS WebView
   e.preventDefault();
   e.stopPropagation();
@@ -196,7 +196,7 @@ function onKeyDown(e: KeyboardEvent) {
 }
 
 function onKeyUp(e: KeyboardEvent) {
-  if (e.isComposing) return;
+  if (e.isComposing || e.keyCode === 229) return;
   e.preventDefault();
   e.stopPropagation();
   if (!capturing) return;

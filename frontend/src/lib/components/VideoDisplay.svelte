@@ -113,7 +113,10 @@
   // Keyboard events on the hidden textarea should bubble to keyboard.ts
   // via the parent container, but we need to handle Esc explicitly
   function onImeKeydown(e: KeyboardEvent) {
-    if (e.isComposing) return; // let IME handle it
+    if (e.isComposing || e.keyCode === 229) {
+      e.stopPropagation();
+      return; // let IME handle it
+    }
     if (justComposed && e.code === 'Enter') {
       justComposed = false;
       e.preventDefault();
