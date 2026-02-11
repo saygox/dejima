@@ -17,7 +17,8 @@ type Config struct {
 	CaptureWidth     int    `json:"capture_width"`
 	CaptureHeight    int    `json:"capture_height"`
 	AudioDeviceID    string `json:"audio_device_id"`
-	AudioVolume      int    `json:"audio_volume"` // 0-100, default 80
+	AudioSampleRate  int    `json:"audio_sample_rate"` // 44100 or 48000, default 48000
+	AudioVolume      int    `json:"audio_volume"`      // 0-100, default 80
 	AudioMuted       bool   `json:"audio_muted"`
 }
 
@@ -30,7 +31,8 @@ func DefaultConfig() *Config {
 		JpegQuality:   80,
 		CaptureWidth:  0,
 		CaptureHeight: 0,
-		AudioVolume:   80,
+		AudioSampleRate: 48000,
+		AudioVolume:     80,
 	}
 }
 

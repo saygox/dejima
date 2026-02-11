@@ -28,6 +28,7 @@ export namespace config {
 	    capture_width: number;
 	    capture_height: number;
 	    audio_device_id: string;
+	    audio_sample_rate: number;
 	    audio_volume: number;
 	    audio_muted: boolean;
 	
@@ -45,6 +46,7 @@ export namespace config {
 	        this.capture_width = source["capture_width"];
 	        this.capture_height = source["capture_height"];
 	        this.audio_device_id = source["audio_device_id"];
+	        this.audio_sample_rate = source["audio_sample_rate"];
 	        this.audio_volume = source["audio_volume"];
 	        this.audio_muted = source["audio_muted"];
 	    }

@@ -57,7 +57,9 @@
         updateVideoDevice(match.name);
         // Auto-set matching audio device if not already configured
         if (!cfg.audio_device_id) {
-          const audioDev = audioDevices.find(a => a.name === match.name);
+          const audioDev = audioDevices.find(a =>
+            a.name === match.name || a.name.includes(match.name) || match.name.includes(a.name)
+          );
           if (audioDev) SetAudioDevice(audioDev.id);
         }
       } else if (videoDevices.length > 0) {
@@ -66,7 +68,9 @@
         selectedDeviceKey = `${first.index}:${first.path || ''}`;
         SetDevice(first.index, first.path || '');
         updateVideoDevice(first.name);
-        const audioDev = audioDevices.find(a => a.name === first.name);
+        const audioDev = audioDevices.find(a =>
+          a.name === first.name || a.name.includes(first.name) || first.name.includes(a.name)
+        );
         if (audioDev) SetAudioDevice(audioDev.id);
       }
 
@@ -131,7 +135,9 @@
     updateVideoDevice(dev?.name || '');
     // Auto-set matching audio device by name
     if (dev) {
-      const audioDev = audioDevices.find(a => a.name === dev.name);
+      const audioDev = audioDevices.find(a =>
+        a.name === dev.name || a.name.includes(dev.name) || dev.name.includes(a.name)
+      );
       if (audioDev) {
         SetAudioDevice(audioDev.id);
       }

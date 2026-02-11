@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { ListVideoDevices, ListAudioDevices, GetConfig, SetDevice, SetCaptureResolution, SetAudioDevice, StartVideo } from '../../../wailsjs/go/main/App';
+  import { ListVideoDevices, ListAudioDevices, GetConfig, SetDevice, SetCaptureResolution, SetAudioDevice, SetAudioSampleRate, StartVideo } from '../../../wailsjs/go/main/App';
   import { updateVideo, updateVideoDevice } from '../stores/connection';
 
   const dispatch = createEventDispatcher();
@@ -20,6 +20,7 @@
   let audioDevices: AudioDeviceInfo[] = [];
   let selectedDeviceKey = '0:';
   let selectedResolution = '0x0';
+  let selectedSampleRate = 48000;
   let error = '';
 
   const resolutions = [
@@ -45,7 +46,9 @@
         selectedDeviceKey = `${match.index}:${match.path || ''}`;
         updateVideoDevice(match.name);
         if (!cfg.audio_device_id) {
-          const audioDev = audioDevices.find(a => a.name === match.name);
+          const audioDev = audioDevices.find(a =>
+            a.name === match.name || a.name.includes(match.name) || match.name.includes(a.name)
+          );
           if (audioDev) SetAudioDevice(audioDev.id);
         }
       } else if (videoDevices.length > 0) {
@@ -53,12 +56,15 @@
         selectedDeviceKey = `${first.index}:${first.path || ''}`;
         SetDevice(first.index, first.path || '');
         updateVideoDevice(first.name);
-        const audioDev = audioDevices.find(a => a.name === first.name);
+        const audioDev = audioDevices.find(a =>
+          a.name === first.name || a.name.includes(first.name) || first.name.includes(a.name)
+        );
         if (audioDev) SetAudioDevice(audioDev.id);
       }
       const w = cfg.capture_width || 0;
       const h = cfg.capture_height || 0;
       selectedResolution = (w && h) ? `${w}x${h}` : '0x0';
+      selectedSampleRate = cfg.audio_sample_rate || 48000;
     } catch {
       // use default
     }
@@ -88,7 +94,9 @@
     const dev = videoDevices.find(d => `${d.index}:${d.path || ''}` === selectedDeviceKey);
     updateVideoDevice(dev?.name || '');
     if (dev) {
-      const audioDev = audioDevices.find(a => a.name === dev.name);
+      const audioDev = audioDevices.find(a =>
+        a.name === dev.name || a.name.includes(dev.name) || dev.name.includes(a.name)
+      );
       if (audioDev) SetAudioDevice(audioDev.id);
     }
   }
@@ -96,6 +104,10 @@
   function onResolutionChange() {
     const [w, h] = selectedResolution.split('x').map(Number);
     SetCaptureResolution(w, h);
+  }
+
+  function onSampleRateChange() {
+    SetAudioSampleRate(selectedSampleRate);
   }
 
   let starting = false;
@@ -146,6 +158,15 @@
         </select>
       </div>
       <p class="hint">Resolution must not exceed the HDMI source output.</p>
+
+      <label class="field-label" for="sample-rate">Audio Sample Rate</label>
+      <div class="port-row">
+        <select id="sample-rate" bind:value={selectedSampleRate} on:change={onSampleRateChange}>
+          <option value={44100}>44100 Hz</option>
+          <option value={48000}>48000 Hz</option>
+        </select>
+      </div>
+      <p class="hint">Restart required after changing sample rate.</p>
 
       <div class="action-row">
         <button class="btn btn-primary" on:click={startAV} disabled={starting || videoDevices.length === 0}>
@@ -227,6 +248,14 @@
     align-items: center;
     gap: 8px;
     margin-bottom: 8px;
+  }
+
+  .field-label {
+    font-size: 0.8em;
+    color: #94a3b8;
+    margin-top: 8px;
+    margin-bottom: 4px;
+    display: block;
   }
 
   .hint {

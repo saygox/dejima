@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/saygox/dejima/internal/audio"
@@ -23,6 +24,7 @@ type App struct {
 	store      *video.FrameStore
 	pipeline   *video.Pipeline
 	audioPipe  *audio.Pipeline
+	audioWg    sync.WaitGroup // tracks async startAudio goroutine
 	hid        *hid.Controller
 	serialPort *serial.Port
 	streamAddr string // "http://localhost:<port>" for MJPEG stream
@@ -109,7 +111,13 @@ func (a *App) StartVideo() error {
 	}
 
 	// Start audio (best-effort, async so oto init doesn't block the UI)
-	go a.startAudio()
+	a.audioWg.Add(1)
+	go func() {
+		defer a.audioWg.Done()
+		if err := a.startAudio(); err != nil {
+			log.Printf("audio: failed to start: %v", err)
+		}
+	}()
 	return nil
 }
 
@@ -169,22 +177,23 @@ func (a *App) SetCaptureResolution(width, height int) {
 
 // --- Audio ---
 
-func (a *App) startAudio() {
-	a.stopAudio()
+func (a *App) startAudio() error {
 	p := audio.NewPipeline()
 	vol := float64(a.cfg.AudioVolume) / 100.0
 	p.SetVolume(vol)
 	p.SetMuted(a.cfg.AudioMuted)
 	if err := p.Start(audio.PipelineConfig{
-		DeviceID: a.cfg.AudioDeviceID,
+		DeviceID:   a.cfg.AudioDeviceID,
+		SampleRate: a.cfg.AudioSampleRate,
 	}); err != nil {
-		log.Printf("audio: failed to start: %v", err)
-		return
+		return fmt.Errorf("audio: %w", err)
 	}
 	a.audioPipe = p
+	return nil
 }
 
 func (a *App) stopAudio() {
+	a.audioWg.Wait() // ensure async startAudio goroutine has finished
 	if a.audioPipe != nil {
 		log.Println("stopAudio: stopping audio pipeline…")
 		a.audioPipe.Stop()
@@ -228,6 +237,13 @@ func (a *App) SetAudioMuted(muted bool) {
 	}
 }
 
+// SetAudioSampleRate sets the audio sample rate and saves config.
+// Requires audio restart to take effect.
+func (a *App) SetAudioSampleRate(rate int) {
+	a.cfg.AudioSampleRate = rate
+	_ = a.cfg.Save()
+}
+
 // GetAudioVolume returns the current audio volume (0-100).
 func (a *App) GetAudioVolume() int {
 	return a.cfg.AudioVolume
@@ -236,6 +252,14 @@ func (a *App) GetAudioVolume() int {
 // GetAudioMuted returns the current audio mute state.
 func (a *App) GetAudioMuted() bool {
 	return a.cfg.AudioMuted
+}
+
+// GetAudioDiag returns detailed audio pipeline diagnostics.
+func (a *App) GetAudioDiag() string {
+	if a.audioPipe == nil {
+		return "Audio pipeline: not running"
+	}
+	return a.audioPipe.Diag()
 }
 
 // --- Serial ---

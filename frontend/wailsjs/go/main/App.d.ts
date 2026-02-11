@@ -10,6 +10,8 @@ export function DetectFT232():Promise<string>;
 
 export function DisconnectSerial():Promise<void>;
 
+export function GetAudioDiag():Promise<string>;
+
 export function GetAudioMuted():Promise<boolean>;
 
 export function GetAudioVolume():Promise<number>;
@@ -53,6 +55,8 @@ export function SendText(arg1:string,arg2:boolean):Promise<void>;
 export function SetAudioDevice(arg1:string):Promise<void>;
 
 export function SetAudioMuted(arg1:boolean):Promise<void>;
+
+export function SetAudioSampleRate(arg1:number):Promise<void>;
 
 export function SetAudioVolume(arg1:number):Promise<void>;
 

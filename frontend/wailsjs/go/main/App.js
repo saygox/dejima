@@ -14,6 +14,10 @@ export function DisconnectSerial() {
   return window['go']['main']['App']['DisconnectSerial']();
 }
 
+export function GetAudioDiag() {
+  return window['go']['main']['App']['GetAudioDiag']();
+}
+
 export function GetAudioMuted() {
   return window['go']['main']['App']['GetAudioMuted']();
 }
@@ -100,6 +104,10 @@ export function SetAudioDevice(arg1) {
 
 export function SetAudioMuted(arg1) {
   return window['go']['main']['App']['SetAudioMuted'](arg1);
+}
+
+export function SetAudioSampleRate(arg1) {
+  return window['go']['main']['App']['SetAudioSampleRate'](arg1);
 }
 
 export function SetAudioVolume(arg1) {

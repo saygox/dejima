@@ -1,66 +1,44 @@
 package audio
 
 import (
-	"encoding/binary"
+	"bytes"
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/ebitengine/oto/v3"
 )
 
 const (
-	sampleRate   = 48000
 	channelCount = 2
 	bitDepth     = 2 // S16LE = 2 bytes per sample
 )
 
-// oto context singleton — oto.NewContext can only be called once per process.
-var (
-	otoOnce sync.Once
-	otoCtx  *oto.Context
-	otoErr  error
-)
-
-func getOtoContext() (*oto.Context, error) {
-	otoOnce.Do(func() {
-		op := &oto.NewContextOptions{
-			SampleRate:   sampleRate,
-			ChannelCount: channelCount,
-			Format:       oto.FormatSignedInt16LE,
-		}
-		var readyCh chan struct{}
-		otoCtx, readyCh, otoErr = oto.NewContext(op)
-		if otoErr == nil {
-			<-readyCh
-		}
-	})
-	return otoCtx, otoErr
-}
-
 // PipelineConfig holds parameters for the audio capture pipeline.
 type PipelineConfig struct {
-	DeviceID string // platform-specific device identifier (empty = default)
+	DeviceID   string // platform-specific device identifier (empty = default)
+	SampleRate int    // e.g. 44100, 48000 (0 defaults to 48000)
 }
 
-// Pipeline manages a GStreamer audio capture subprocess and plays PCM via oto.
+// Pipeline manages a single GStreamer process that captures audio and plays it
+// directly (wasapi2src → volume → autoaudiosink). No PCM data passes through Go.
 type Pipeline struct {
-	mu      sync.Mutex
-	running bool
-	cmd     *exec.Cmd
-	stopCh  chan struct{}
+	mu           sync.Mutex
+	running      bool
+	cmd          *exec.Cmd
+	stopCh       chan struct{}
+	stderrBuf    bytes.Buffer
+	cmdLine      string
+	exitErr      string
+	restartTimer *time.Timer
 
 	volMu  sync.RWMutex
 	volume float64 // 0.0–1.0
 	muted  bool
 
-	player *oto.Player
-	pw     *io.PipeWriter
+	lastCfg PipelineConfig // saved for restart
 }
 
 // NewPipeline creates a new audio pipeline (not yet started).
@@ -71,6 +49,7 @@ func NewPipeline() *Pipeline {
 }
 
 // SetVolume sets the playback volume (0.0–1.0).
+// The pipeline is restarted with a debounce to apply the new volume.
 func (p *Pipeline) SetVolume(v float64) {
 	if v < 0 {
 		v = 0
@@ -81,16 +60,19 @@ func (p *Pipeline) SetVolume(v float64) {
 	p.volMu.Lock()
 	p.volume = v
 	p.volMu.Unlock()
+	p.scheduleRestart()
 }
 
 // SetMuted sets the mute state.
+// The pipeline is restarted with a debounce to apply the change.
 func (p *Pipeline) SetMuted(m bool) {
 	p.volMu.Lock()
 	p.muted = m
 	p.volMu.Unlock()
+	p.scheduleRestart()
 }
 
-// Start launches the GStreamer audio capture and oto playback.
+// Start launches a single GStreamer process: capture → volume → autoaudiosink.
 func (p *Pipeline) Start(cfg PipelineConfig) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -99,50 +81,50 @@ func (p *Pipeline) Start(cfg PipelineConfig) error {
 		return fmt.Errorf("audio pipeline already running")
 	}
 
-	// Build GStreamer pipeline args
+	rate := cfg.SampleRate
+	if rate == 0 {
+		rate = 48000
+	}
+
+	p.lastCfg = cfg
+
+	p.volMu.RLock()
+	vol := p.volume
+	if p.muted {
+		vol = 0.0
+	}
+	p.volMu.RUnlock()
+
+	caps := fmt.Sprintf("audio/x-raw,format=S16LE,rate=%d,channels=%d", rate, channelCount)
+
 	srcArgs := AudioSourceArgs(cfg.DeviceID)
 	args := append([]string{"-e"}, srcArgs...)
 	args = append(args, "!", "audioconvert", "!", "audioresample",
-		"!", fmt.Sprintf("audio/x-raw,format=S16LE,rate=%d,channels=%d", sampleRate, channelCount),
-		"!", "fdsink", "fd=1")
+		"!", caps,
+		"!", "volume", fmt.Sprintf("volume=%.2f", vol),
+		"!", "autoaudiosink")
 
-	cmdLine := "gst-launch-1.0 " + strings.Join(args, " ")
-	log.Printf("audio: launching: %s", cmdLine)
+	p.cmdLine = "gst-launch-1.0 " + strings.Join(args, " ")
+	log.Printf("audio: launching: %s", p.cmdLine)
 
 	p.cmd = exec.Command("gst-launch-1.0", args...)
 	hideWindow(p.cmd)
 
-	stdout, err := p.cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("audio stdout pipe: %w", err)
-	}
-
-	p.cmd.Stderr = log.Writer()
+	p.stderrBuf.Reset()
+	p.exitErr = ""
+	p.cmd.Stderr = io.MultiWriter(log.Writer(), &p.stderrBuf)
 
 	if err := p.cmd.Start(); err != nil {
 		return fmt.Errorf("starting audio gst-launch: %w", err)
 	}
-
-	// Get or create the singleton oto context
-	ctx, err := getOtoContext()
-	if err != nil {
-		_ = killProcess(p.cmd)
-		return fmt.Errorf("creating oto context: %w", err)
-	}
-
-	// io.Pipe connects the volume-scaled PCM writer to the oto player's reader
-	pr, pw := io.Pipe()
-	p.pw = pw
-	p.player = ctx.NewPlayer(pr)
-	p.player.Play()
+	log.Printf("audio: gst-launch started (pid=%d)", p.cmd.Process.Pid)
 
 	p.running = true
 	p.stopCh = make(chan struct{})
 
-	go p.readLoop(stdout)
 	go p.waitForExit()
 
-	log.Printf("audio: pipeline started (device-id=%q)", cfg.DeviceID)
+	log.Printf("audio: pipeline started (device-id=%q, volume=%.2f)", cfg.DeviceID, vol)
 	return nil
 }
 
@@ -155,27 +137,15 @@ func (p *Pipeline) Stop() {
 		return
 	}
 
+	if p.restartTimer != nil {
+		p.restartTimer.Stop()
+		p.restartTimer = nil
+	}
+
 	close(p.stopCh)
 
 	if p.cmd != nil && p.cmd.Process != nil {
 		_ = killProcess(p.cmd)
-	}
-
-	if p.pw != nil {
-		_ = p.pw.Close()
-	}
-
-	if p.player != nil {
-		done := make(chan struct{})
-		go func() {
-			_ = p.player.Close()
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			log.Printf("audio: player.Close() timed out — continuing")
-		}
 	}
 
 	p.running = false
@@ -189,86 +159,69 @@ func (p *Pipeline) IsRunning() bool {
 	return p.running
 }
 
-// readLoop reads raw PCM from GStreamer stdout, applies volume scaling,
-// and writes to the oto player via io.Pipe.
-func (p *Pipeline) readLoop(r io.Reader) {
-	// Read in chunks of 4096 bytes (must be multiple of 4 for S16LE stereo)
-	buf := make([]byte, 4096)
+// scheduleRestart debounces pipeline restarts when volume/mute changes.
+func (p *Pipeline) scheduleRestart() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	for {
-		select {
-		case <-p.stopCh:
-			return
-		default:
-		}
-
-		n, err := r.Read(buf)
-		if err != nil {
-			select {
-			case <-p.stopCh:
-				return
-			default:
-				if err != io.EOF {
-					log.Printf("audio: read error: %v", err)
-				}
-				return
-			}
-		}
-
-		if n == 0 {
-			continue
-		}
-
-		// Apply volume scaling to PCM S16LE samples
-		data := buf[:n]
-		p.volMu.RLock()
-		vol := p.volume
-		muted := p.muted
-		p.volMu.RUnlock()
-
-		if muted {
-			// Zero out the buffer
-			for i := range data {
-				data[i] = 0
-			}
-		} else if vol < 1.0 {
-			// Scale each S16LE sample
-			for i := 0; i+1 < len(data); i += 2 {
-				sample := int16(binary.LittleEndian.Uint16(data[i : i+2]))
-				scaled := float64(sample) * vol
-				// Clamp
-				if scaled > math.MaxInt16 {
-					scaled = math.MaxInt16
-				} else if scaled < math.MinInt16 {
-					scaled = math.MinInt16
-				}
-				binary.LittleEndian.PutUint16(data[i:i+2], uint16(int16(scaled)))
-			}
-		}
-
-		if _, err := p.pw.Write(data); err != nil {
-			select {
-			case <-p.stopCh:
-				return
-			default:
-				log.Printf("audio: write error: %v", err)
-				return
-			}
-		}
+	if !p.running {
+		return
 	}
+
+	if p.restartTimer != nil {
+		p.restartTimer.Stop()
+	}
+	p.restartTimer = time.AfterFunc(200*time.Millisecond, func() {
+		p.Stop()
+		if err := p.Start(p.lastCfg); err != nil {
+			log.Printf("audio: restart failed: %v", err)
+		}
+	})
 }
 
 func (p *Pipeline) waitForExit() {
-	var exitErr error
-	if p.cmd != nil {
-		exitErr = p.cmd.Wait()
-	}
+	exitErr := p.cmd.Wait()
 	p.mu.Lock()
 	p.running = false
+	if exitErr != nil {
+		p.exitErr = exitErr.Error()
+	}
+	stderrSnap := p.stderrBuf.String()
 	p.mu.Unlock()
 	if exitErr != nil {
 		log.Printf("audio: pipeline exited with error: %v", exitErr)
 	} else {
 		log.Printf("audio: pipeline exited")
 	}
+	if len(stderrSnap) > 0 {
+		log.Printf("audio: gstreamer stderr:\n%s", stderrSnap)
+	}
+}
+
+// Diag returns diagnostic information about the audio pipeline.
+func (p *Pipeline) Diag() string {
+	p.mu.Lock()
+	running := p.running
+	stderr := p.stderrBuf.String()
+	cmdLine := p.cmdLine
+	exitErr := p.exitErr
+	p.mu.Unlock()
+
+	p.volMu.RLock()
+	vol := p.volume
+	muted := p.muted
+	p.volMu.RUnlock()
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Running: %v\n", running)
+	fmt.Fprintf(&b, "ExitErr: %s\n", exitErr)
+	fmt.Fprintf(&b, "Volume: %.0f%% (muted=%v)\n", vol*100, muted)
+	fmt.Fprintf(&b, "Pipeline: %s\n", cmdLine)
+	fmt.Fprintf(&b, "\n--- GStreamer stderr ---\n")
+	if stderr == "" {
+		fmt.Fprintf(&b, "(empty)\n")
+	} else {
+		b.WriteString(stderr)
+	}
+	return b.String()
 }
