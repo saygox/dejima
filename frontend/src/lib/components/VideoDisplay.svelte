@@ -2,8 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { startKeyboardCapture, stopKeyboardCapture, releaseAllKeys } from '../input/keyboard';
   import { startMouseCapture, stopMouseCapture, enterCapture, exitCapture } from '../input/mouse';
-  import { connection } from '../stores/connection';
-  import { GetStreamURL, SendText } from '../../../wailsjs/go/main/App';
+  import { connection, updateVideo } from '../stores/connection';
+  import { GetStreamURL, SendText, StartVideo, StopVideo } from '../../../wailsjs/go/main/App';
   import { WindowSetTitle } from '../../../wailsjs/runtime';
   import { pasteMode } from '../stores/imeMode';
 
@@ -18,14 +18,53 @@
   let streamURL = '';
   let composing = false;
   let justComposed = false;
+  let lastContainerClickTime = 0;
+  let singleClickTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function onContainerClick(e: MouseEvent) {
-    if (!captured) {
-      captured = true;
-      enterCapture(e.clientX, e.clientY);
+  function onContainerPointerDown(e: PointerEvent) {
+    if (captured) return; // mouse.ts handles captured clicks
+
+    const now = Date.now();
+    if (now - lastContainerClickTime < 400) {
+      // Double-click → toggle AV
+      lastContainerClickTime = 0;
+      if (singleClickTimer) {
+        clearTimeout(singleClickTimer);
+        singleClickTimer = null;
+      }
+      toggleAV();
+    } else {
+      // Possible single-click → delay 400ms to distinguish from double-click
+      lastContainerClickTime = now;
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      singleClickTimer = setTimeout(() => {
+        singleClickTimer = null;
+        captured = true;
+        enterCapture(clientX, clientY);
+        imeInput?.focus();
+      }, 400);
     }
-    // Focus the hidden textarea so it receives IME input
-    imeInput?.focus();
+  }
+
+  async function toggleAV() {
+    console.log('[VideoDisplay] toggleAV, streaming=', $connection.videoStreaming);
+    if ($connection.videoStreaming) {
+      try {
+        await StopVideo();
+      } catch (e) {
+        console.error('[VideoDisplay] StopVideo failed:', e);
+      } finally {
+        updateVideo(false);
+      }
+    } else {
+      try {
+        await StartVideo();
+        updateVideo(true);
+      } catch {
+        // ignore — user can use status bar settings
+      }
+    }
   }
 
   function onKeyDown(e: KeyboardEvent) {
@@ -96,6 +135,7 @@
   });
 
   onDestroy(() => {
+    if (singleClickTimer) clearTimeout(singleClickTimer);
     stopKeyboardCapture(videoContainer);
     stopMouseCapture(videoContainer);
   });
@@ -107,7 +147,7 @@
   class:captured
   bind:this={videoContainer}
   tabindex="0"
-  on:click={onContainerClick}
+  on:pointerdown={onContainerPointerDown}
   on:keydown={onKeyDown}
   on:contextmenu|preventDefault
   role="application"

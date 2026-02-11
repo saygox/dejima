@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // VideoDevice represents a detected video capture device.
@@ -210,6 +211,7 @@ func (p *Pipeline) Start() error {
 
 	go p.readFrames(stdout)
 	go p.waitForExit()
+	go p.startupHealthCheck(10 * time.Second)
 
 	log.Printf("gstreamer: pipeline started (device-index=%d, device-path=%q, %dx%d)",
 		p.config.DeviceIndex, p.config.DevicePath, p.config.Width, p.config.Height)
@@ -309,6 +311,32 @@ func readMultipartFrame(r *bufio.Reader) ([]byte, error) {
 	}
 }
 
+// startupHealthCheck monitors the pipeline after launch and auto-stops it
+// if no frames are received within the given timeout.
+func (p *Pipeline) startupHealthCheck(timeout time.Duration) {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-p.stopCh:
+			return
+		case <-timer.C:
+			if atomic.LoadUint64(&p.frameCount) == 0 {
+				log.Printf("gstreamer: no frames received within %v — stopping pipeline (device may need reconnecting)", timeout)
+				go p.Stop()
+			}
+			return
+		case <-ticker.C:
+			if atomic.LoadUint64(&p.frameCount) > 0 {
+				return
+			}
+		}
+	}
+}
+
 func (p *Pipeline) waitForExit() {
 	var exitErr error
 	if p.cmd != nil {
@@ -336,11 +364,16 @@ func (p *Pipeline) Stop() error {
 		return nil
 	}
 
-	close(p.stopCh)
+	select {
+	case <-p.stopCh:
+		// already closed
+	default:
+		close(p.stopCh)
+	}
 
 	if p.cmd != nil && p.cmd.Process != nil {
-		if err := p.cmd.Process.Kill(); err != nil {
-			return fmt.Errorf("killing gst-launch: %w", err)
+		if err := killProcess(p.cmd); err != nil {
+			log.Printf("gstreamer: killProcess error (ignored): %v", err)
 		}
 	}
 

@@ -2,18 +2,36 @@
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { connection, updateVideo, updateSerial } from '../stores/connection';
   import { pasteMode } from '../stores/imeMode';
-  import { GetVideoFrameCount, StartVideo, StopVideo, GetConfig, ConnectSerial, DisconnectSerial, DetectFT232, GetAudioVolume, GetAudioMuted, SetAudioVolume, SetAudioMuted } from '../../../wailsjs/go/main/App';
+  import { GetVideoFrameCount, GetVideoStatus, StartVideo, StopVideo, GetConfig, ConnectSerial, DisconnectSerial, DetectFT232, GetAudioVolume, GetAudioMuted, SetAudioVolume, SetAudioMuted } from '../../../wailsjs/go/main/App';
 
   const dispatch = createEventDispatcher();
 
   let avLongPress: ReturnType<typeof setTimeout> | null = null;
   let serialLongPress: ReturnType<typeof setTimeout> | null = null;
+  let lastAVClickTime = 0;
+  let lastSerialClickTime = 0;
 
   function onAVPointerDown() {
-    if ($connection.videoStreaming) return;
+    console.log('[StatusBar] onAVPointerDown');
+    // Double-click detection (before streaming check)
+    const now = Date.now();
+    if (now - lastAVClickTime < 400) {
+      lastAVClickTime = 0;
+      if (avLongPress) { clearTimeout(avLongPress); avLongPress = null; }
+      onAVDblClick();
+      return;
+    }
+    lastAVClickTime = now;
+
+    // Long-press: OFF → open settings, ON → stop
     avLongPress = setTimeout(() => {
       avLongPress = null;
-      dispatch('av-settings');
+      console.log('[StatusBar] long-press fired, streaming=', $connection.videoStreaming);
+      if ($connection.videoStreaming) {
+        onAVDblClick();
+      } else {
+        dispatch('av-settings');
+      }
     }, 500);
   }
 
@@ -25,10 +43,24 @@
   }
 
   function onSerialPointerDown() {
-    if ($connection.serialConnected) return;
+    // Double-click detection (before connected check)
+    const now = Date.now();
+    if (now - lastSerialClickTime < 400) {
+      lastSerialClickTime = 0;
+      if (serialLongPress) { clearTimeout(serialLongPress); serialLongPress = null; }
+      onSerialDblClick();
+      return;
+    }
+    lastSerialClickTime = now;
+
+    // Long-press: disconnected → open settings, connected → disconnect
     serialLongPress = setTimeout(() => {
       serialLongPress = null;
-      dispatch('serial-settings');
+      if ($connection.serialConnected) {
+        onSerialDblClick();
+      } else {
+        dispatch('serial-settings');
+      }
     }, 500);
   }
 
@@ -74,9 +106,15 @@
   }
 
   async function onAVDblClick() {
+    console.log('[StatusBar] onAVDblClick, streaming=', $connection.videoStreaming);
     if ($connection.videoStreaming) {
-      await StopVideo();
-      updateVideo(false);
+      try {
+        await StopVideo();
+      } catch (e) {
+        console.error('[StatusBar] StopVideo failed:', e);
+      } finally {
+        updateVideo(false);
+      }
     } else {
       try {
         await StartVideo();
@@ -113,6 +151,16 @@
     pollTimer = setInterval(async () => {
       try {
         frameCount = await GetVideoFrameCount();
+      } catch {
+        // ignore
+      }
+      // Sync frontend state with backend reality
+      try {
+        const backendRunning = await GetVideoStatus();
+        if ($connection.videoStreaming && !backendRunning) {
+          console.log('[StatusBar] backend pipeline stopped — syncing UI');
+          updateVideo(false);
+        }
       } catch {
         // ignore
       }
@@ -154,12 +202,12 @@
 
 <div class="status-bar">
   <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <div class="status-item clickable" on:dblclick={onAVDblClick} on:pointerdown={onAVPointerDown} on:pointerup={onAVPointerUp} on:pointerleave={onAVPointerUp} title="{$connection.videoStreaming ? 'ダブルクリックで停止' : 'ダブルクリック/長押しで設定'}" role="button" tabindex="0">
+  <div class="status-item clickable" on:pointerdown={onAVPointerDown} on:pointerup={onAVPointerUp} on:pointerleave={onAVPointerUp} on:contextmenu|preventDefault title="{$connection.videoStreaming ? 'ダブルクリック/長押しで停止' : 'ダブルクリック/長押しで設定'}" role="button" tabindex="0">
     <span class="dot" class:connected={$connection.videoStreaming} class:warning={noFramesWarning}></span>
     {videoLabel($connection.videoStreaming, noFramesWarning, $connection.videoDeviceName)}
   </div>
   <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <div class="status-item clickable" on:dblclick={onSerialDblClick} on:pointerdown={onSerialPointerDown} on:pointerup={onSerialPointerUp} on:pointerleave={onSerialPointerUp} title="{$connection.serialConnected ? 'ダブルクリックで切断' : 'ダブルクリック/長押しで設定'}" role="button" tabindex="0">
+  <div class="status-item clickable" on:pointerdown={onSerialPointerDown} on:pointerup={onSerialPointerUp} on:pointerleave={onSerialPointerUp} on:contextmenu|preventDefault title="{$connection.serialConnected ? 'ダブルクリック/長押しで切断' : 'ダブルクリック/長押しで設定'}" role="button" tabindex="0">
     <span class="dot" class:connected={$connection.serialConnected}></span>
     Serial: {$connection.serialConnected ? $connection.serialPort : 'Disconnected'}
   </div>

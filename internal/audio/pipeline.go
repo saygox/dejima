@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ebitengine/oto/v3"
 )
@@ -125,7 +126,7 @@ func (p *Pipeline) Start(cfg PipelineConfig) error {
 	// Get or create the singleton oto context
 	ctx, err := getOtoContext()
 	if err != nil {
-		_ = p.cmd.Process.Kill()
+		_ = killProcess(p.cmd)
 		return fmt.Errorf("creating oto context: %w", err)
 	}
 
@@ -157,7 +158,7 @@ func (p *Pipeline) Stop() {
 	close(p.stopCh)
 
 	if p.cmd != nil && p.cmd.Process != nil {
-		_ = p.cmd.Process.Kill()
+		_ = killProcess(p.cmd)
 	}
 
 	if p.pw != nil {
@@ -165,7 +166,16 @@ func (p *Pipeline) Stop() {
 	}
 
 	if p.player != nil {
-		_ = p.player.Close()
+		done := make(chan struct{})
+		go func() {
+			_ = p.player.Close()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			log.Printf("audio: player.Close() timed out — continuing")
+		}
 	}
 
 	p.running = false

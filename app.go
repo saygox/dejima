@@ -108,18 +108,21 @@ func (a *App) StartVideo() error {
 		return err
 	}
 
-	// Start audio (best-effort)
-	a.startAudio()
+	// Start audio (best-effort, async so oto init doesn't block the UI)
+	go a.startAudio()
 	return nil
 }
 
 // StopVideo stops the video capture pipeline.
 func (a *App) StopVideo() {
+	log.Println("StopVideo: stopping audio…")
 	a.stopAudio()
+	log.Println("StopVideo: audio stopped, stopping video…")
 	if a.pipeline != nil {
 		_ = a.pipeline.Stop()
 		a.pipeline = nil
 	}
+	log.Println("StopVideo: done")
 }
 
 // GetVideoStatus returns whether video is currently streaming.
@@ -168,22 +171,25 @@ func (a *App) SetCaptureResolution(width, height int) {
 
 func (a *App) startAudio() {
 	a.stopAudio()
-	a.audioPipe = audio.NewPipeline()
+	p := audio.NewPipeline()
 	vol := float64(a.cfg.AudioVolume) / 100.0
-	a.audioPipe.SetVolume(vol)
-	a.audioPipe.SetMuted(a.cfg.AudioMuted)
-	if err := a.audioPipe.Start(audio.PipelineConfig{
+	p.SetVolume(vol)
+	p.SetMuted(a.cfg.AudioMuted)
+	if err := p.Start(audio.PipelineConfig{
 		DeviceID: a.cfg.AudioDeviceID,
 	}); err != nil {
 		log.Printf("audio: failed to start: %v", err)
-		a.audioPipe = nil
+		return
 	}
+	a.audioPipe = p
 }
 
 func (a *App) stopAudio() {
 	if a.audioPipe != nil {
+		log.Println("stopAudio: stopping audio pipeline…")
 		a.audioPipe.Stop()
 		a.audioPipe = nil
+		log.Println("stopAudio: done")
 	}
 }
 

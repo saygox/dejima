@@ -166,12 +166,14 @@
     const cfg = await GetConfig();
 
     // Video: match saved device against available devices, auto-start if found
+    // Skip auto-start on Windows — GStreamer setup may need manual intervention
+    const isWindows = /Windows/i.test(navigator.userAgent);
     const devices = await ListVideoDevices() || [];
     const match = devices.find(d =>
       (cfg.device_path && d.path === cfg.device_path) ||
       (!cfg.device_path && d.index === (cfg.device_index || 0))
     );
-    if (match) {
+    if (match && !isWindows) {
       try {
         await StartVideo();
         updateVideo(true);
