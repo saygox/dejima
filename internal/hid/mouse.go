@@ -1,6 +1,6 @@
 package hid
 
-import "github.com/saygox/kvm-like/internal/protocol"
+import "github.com/saygox/dejima/internal/protocol"
 
 // JSButtonToProtocol maps JavaScript MouseEvent.button to protocol button codes.
 func JSButtonToProtocol(jsButton int) byte {

@@ -5,8 +5,8 @@ import (
 	"log"
 	"sync"
 
-	"github.com/saygox/kvm-like/internal/protocol"
-	"github.com/saygox/kvm-like/internal/serial"
+	"github.com/saygox/dejima/internal/protocol"
+	"github.com/saygox/dejima/internal/serial"
 )
 
 // Controller routes frontend input events through the protocol encoder

@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/saygox/kvm-like/internal/audio"
-	"github.com/saygox/kvm-like/internal/config"
-	"github.com/saygox/kvm-like/internal/hid"
-	"github.com/saygox/kvm-like/internal/protocol"
-	"github.com/saygox/kvm-like/internal/serial"
-	"github.com/saygox/kvm-like/internal/video"
+	"github.com/saygox/dejima/internal/audio"
+	"github.com/saygox/dejima/internal/config"
+	"github.com/saygox/dejima/internal/hid"
+	"github.com/saygox/dejima/internal/protocol"
+	"github.com/saygox/dejima/internal/serial"
+	"github.com/saygox/dejima/internal/video"
 )
 
 // App struct holds the application state and is bound to Wails.

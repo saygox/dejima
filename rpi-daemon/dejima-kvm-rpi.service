@@ -1,5 +1,5 @@
 [Unit]
-Description=KVM-Like HID Daemon
+Description=Dejima KVM HID Daemon (RPi)
 After=graphical.target
 
 [Service]
@@ -10,7 +10,7 @@ Environment=WAYLAND_DISPLAY=wayland-0
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 # X11 fallback (older Raspberry Pi OS)
 Environment=DISPLAY=:0
-ExecStart=/usr/local/bin/kvm-daemon -device /dev/ttyAMA0 -baud 115200
+ExecStart=/usr/local/bin/dejima-kvm-daemon-rpi -device /dev/ttyAMA0 -baud 115200
 Restart=always
 RestartSec=3
 User=root

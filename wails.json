@@ -1,13 +1,13 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "kvm-like",
-  "outputfilename": "kvm_like",
+  "name": "dejima-kvm",
+  "outputfilename": "dejima-kvm",
   "frontend:install": "npm install",
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
-    "name": "itosaygo",
+    "name": "syagox",
     "email": "ito.saygo@gmail.com"
   }
 }

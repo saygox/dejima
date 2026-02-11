@@ -40,7 +40,7 @@ func configPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("getting config dir: %w", err)
 	}
-	return filepath.Join(dir, "kvm-like", "config.json"), nil
+	return filepath.Join(dir, "dejima", "config.json"), nil
 }
 
 // Load reads the config from disk. Returns default config if file doesn't exist.

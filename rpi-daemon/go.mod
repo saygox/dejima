@@ -1,4 +1,4 @@
-module github.com/saygox/kvm-like/rpi-daemon
+module github.com/saygox/dejima/rpi-daemon
 
 go 1.23
 

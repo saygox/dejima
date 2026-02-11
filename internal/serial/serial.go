@@ -7,7 +7,7 @@ import (
 
 	"go.bug.st/serial"
 
-	"github.com/saygox/kvm-like/internal/protocol"
+	"github.com/saygox/dejima/internal/protocol"
 )
 
 // DefaultBaudRate is the UART baud rate for FT232 communication.

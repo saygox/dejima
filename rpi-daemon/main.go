@@ -12,9 +12,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/saygox/kvm-like/rpi-daemon/internal/injector"
-	"github.com/saygox/kvm-like/rpi-daemon/internal/protocol"
-	"github.com/saygox/kvm-like/rpi-daemon/internal/uart"
+	"github.com/saygox/dejima/rpi-daemon/internal/injector"
+	"github.com/saygox/dejima/rpi-daemon/internal/protocol"
+	"github.com/saygox/dejima/rpi-daemon/internal/uart"
 )
 
 // Set at build time via: -ldflags "-X main.buildVersion=..."
@@ -28,7 +28,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println("kvm-daemon", buildVersion)
+		fmt.Println("dejima-kvm-daemon-rpi", buildVersion)
 		os.Exit(0)
 	}
 
@@ -38,7 +38,7 @@ func main() {
 	}
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Printf("kvm-daemon %s starting: device=%s baud=%d", buildVersion, *device, *baud)
+	log.Printf("dejima-kvm-daemon-rpi %s starting: device=%s baud=%d", buildVersion, *device, *baud)
 
 	// Open UART
 	port, err := uart.Open(*device, *baud)
@@ -215,7 +215,7 @@ func collectDiagnostics() string {
 		fmt.Fprintf(&b, format+"\n", args...)
 	}
 
-	w("=== kvm-daemon diagnostics ===")
+	w("=== dejima-kvm-daemon-rpi diagnostics ===")
 	w("Version:  %s", buildVersion)
 	w("Go:       %s %s/%s", runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	w("")

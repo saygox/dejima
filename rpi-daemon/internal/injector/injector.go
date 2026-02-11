@@ -37,18 +37,18 @@ type Injector struct {
 // New creates a new uinput Injector.
 // Requires /dev/uinput access (typically root or uinput group).
 func New() (*Injector, error) {
-	kb, err := uinput.CreateKeyboard("/dev/uinput", []byte("kvm-keyboard"))
+	kb, err := uinput.CreateKeyboard("/dev/uinput", []byte("dejima-kvm-keyboard-rpi"))
 	if err != nil {
 		return nil, fmt.Errorf("creating virtual keyboard: %w", err)
 	}
 
-	mouse, err := uinput.CreateMouse("/dev/uinput", []byte("kvm-mouse"))
+	mouse, err := uinput.CreateMouse("/dev/uinput", []byte("dejima-kvm-mouse-rpi"))
 	if err != nil {
 		kb.Close()
 		return nil, fmt.Errorf("creating virtual mouse: %w", err)
 	}
 
-	ap, err := newAbsPointer("kvm-abs-pointer", AbsMax, AbsMax)
+	ap, err := newAbsPointer("dejima-kvm-abs-pointer-rpi", AbsMax, AbsMax)
 	if err != nil {
 		kb.Close()
 		mouse.Close()

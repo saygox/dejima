@@ -41,5 +41,5 @@ make build-windows
 ## 起動
 
 1. USB HDMI キャプチャデバイスと FT232 を Windows PC に接続
-2. `kvm-like.exe` を実行
+2. `dejima-kvm.exe` を実行
 3. 設定画面でキャプチャデバイスとシリアルポート (COMx) を選択

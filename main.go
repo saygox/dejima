@@ -24,7 +24,7 @@ func buildAppMenu(app *App) *menu.Menu {
 
 	if goruntime.GOOS == "darwin" {
 		// macOS requires an app menu; keep only Quit
-		sub := appMenu.AddSubmenu("KVM-Like")
+		sub := appMenu.AddSubmenu("Dejima")
 		sub.AddText("Quit", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
 			// Wails handles quit
 		})
@@ -74,7 +74,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:  "KVM-Like",
+		Title:  "Dejima",
 		Width:  1280,
 		Height: 720,
 		Menu:   buildAppMenu(app),

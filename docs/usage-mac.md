@@ -51,7 +51,7 @@ FT232モジュール          RPi4 (40ピンヘッダ)
 
 RPi4はデフォルトでGPIO14/15にmini UART (ttyS0) を割り当てており、
 PL011 (ttyAMA0) はBluetoothに使われています。
-kvm-daemon は `/dev/ttyAMA0` を使うため、PL011をGPIO14/15に切り替えます。
+dejima-kvm-daemon-rpi は `/dev/ttyAMA0` を使うため、PL011をGPIO14/15に切り替えます。
 
 ```bash
 # /boot/firmware/config.txt の末尾に追加
@@ -76,7 +76,7 @@ ls -la /dev/ttyAMA0    # 存在すればOK
 開発モード:
 
 ```bash
-cd /Users/itosaygo/dev/ai/kvm_like
+cd /Users/syagox/dev/ai/kvm_like
 wails dev
 ```
 
@@ -84,14 +84,14 @@ wails dev
 
 ```bash
 wails build
-# → build/bin/kvm_like.app が生成される
+# → build/bin/dejima-kvm.app が生成される
 ```
 
 ## 3. 操作の流れ
 
 ```
 ┌─────────────────────────────────────────┐
-│ [KVM-Like]   [Start Video]   [Settings] │  ← Toolbar
+│ [Dejima]     [Start Video]   [Settings] │  ← Toolbar
 ├─────────────────────────────────────────┤
 │                                         │
 │         映像表示エリア                    │  ← クリックで入力キャプチャ開始
@@ -129,12 +129,12 @@ RPi4にデーモンをデプロイ:
 make build-rpi
 
 # RPi4に転送
-scp build/bin/kvm-daemon pi@<rpi-ip>:/usr/local/bin/
-scp rpi-daemon/kvm-daemon.service pi@<rpi-ip>:/etc/systemd/system/
+scp build/bin/dejima-kvm-daemon-rpi pi@<rpi-ip>:/usr/local/bin/
+scp rpi-daemon/dejima-kvm-rpi.service pi@<rpi-ip>:/etc/systemd/system/
 
 # RPi4側で有効化
 ssh pi@<rpi-ip>
-sudo systemctl enable --now kvm-daemon
+sudo systemctl enable --now dejima-kvm-rpi
 ```
 
 ## 5. デバイス番号の確認

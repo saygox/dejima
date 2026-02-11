@@ -1,6 +1,6 @@
 # Raspberry Pi 4 セットアップガイド
 
-KVM-Like デーモン (`kvm-daemon`) を RPi4 にインストールし、
+Dejima デーモン (`dejima-kvm-daemon-rpi`) を RPi4 にインストールし、
 ホスト PC からキーボード・マウスを操作できるようにするまでの手順です。
 
 ---
@@ -61,7 +61,7 @@ FT232 モジュール          RPi4 (40ピンヘッダ)
 
 RPi4 はデフォルトで GPIO14/15 に mini UART (`ttyS0`) を割り当てており、
 高性能な PL011 UART (`ttyAMA0`) は Bluetooth が使用しています。
-kvm-daemon は `/dev/ttyAMA0` を使うため、以下の設定で PL011 を GPIO14/15 に切り替え、
+dejima-kvm-daemon-rpi は `/dev/ttyAMA0` を使うため、以下の設定で PL011 を GPIO14/15 に切り替え、
 Bluetooth を無効にします。
 
 #### config.txt の編集
@@ -73,7 +73,7 @@ sudo nano /boot/firmware/config.txt
 ファイル末尾に以下を追加:
 
 ```ini
-# KVM-Like: PL011 UART を GPIO14/15 に割り当て、BT を無効化
+# Dejima: PL011 UART を GPIO14/15 に割り当て、BT を無効化
 dtoverlay=disable-bt
 enable_uart=1
 ```
@@ -91,7 +91,7 @@ sudo systemctl disable bluetooth
 #### シリアルコンソールの無効化
 
 Raspberry Pi OS はデフォルトでシリアルポートをログインコンソールとして使用しています。
-kvm-daemon がシリアルポートを専有するため、これを無効にします。
+dejima-kvm-daemon-rpi がシリアルポートを専有するため、これを無効にします。
 
 ```bash
 # シリアルコンソールを無効化
@@ -132,7 +132,7 @@ systemctl is-active bluetooth              # inactive であること
 
 ### uinput モジュール
 
-kvm-daemon は `/dev/uinput` を通じて仮想キーボード・マウスを作成します。
+dejima-kvm-daemon-rpi は `/dev/uinput` を通じて仮想キーボード・マウスを作成します。
 
 ```bash
 # カーネルモジュールを起動時に自動ロード
@@ -168,7 +168,7 @@ sudo apt install -y wtype wl-clipboard
 make build-rpi
 ```
 
-`build/bin/kvm-daemon` (linux/arm64) が生成されます。
+`build/bin/dejima-kvm-daemon-rpi` (linux/arm64) が生成されます。
 
 ### RPi4 への転送
 
@@ -176,12 +176,12 @@ make build-rpi
 RPI=pi@<rpi-ip>
 
 # バイナリ
-scp build/bin/kvm-daemon ${RPI}:/tmp/
-ssh ${RPI} 'sudo mv /tmp/kvm-daemon /usr/local/bin/ && sudo chmod +x /usr/local/bin/kvm-daemon'
+scp build/bin/dejima-kvm-daemon-rpi ${RPI}:/tmp/
+ssh ${RPI} 'sudo mv /tmp/dejima-kvm-daemon-rpi /usr/local/bin/ && sudo chmod +x /usr/local/bin/dejima-kvm-daemon-rpi'
 
 # systemd サービスファイル
-scp rpi-daemon/kvm-daemon.service ${RPI}:/tmp/
-ssh ${RPI} 'sudo mv /tmp/kvm-daemon.service /etc/systemd/system/'
+scp rpi-daemon/dejima-kvm-rpi.service ${RPI}:/tmp/
+ssh ${RPI} 'sudo mv /tmp/dejima-kvm-rpi.service /etc/systemd/system/'
 ```
 
 ### 動作確認 (手動実行)
@@ -190,13 +190,13 @@ ssh ${RPI} 'sudo mv /tmp/kvm-daemon.service /etc/systemd/system/'
 
 ```bash
 # RPi4 上で実行
-sudo /usr/local/bin/kvm-daemon -diag
+sudo /usr/local/bin/dejima-kvm-daemon-rpi -diag
 ```
 
 出力例:
 
 ```
-=== kvm-daemon diagnostics ===
+=== dejima-kvm-daemon-rpi diagnostics ===
 Version:  20260208-153000
 Go:       go1.23 linux/arm64
 
@@ -229,26 +229,26 @@ Go:       go1.23 linux/arm64
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now kvm-daemon
+sudo systemctl enable --now dejima-kvm-rpi
 ```
 
 ```bash
 # 状態確認
-sudo systemctl status kvm-daemon
+sudo systemctl status dejima-kvm-rpi
 
 # ログ確認
-journalctl -u kvm-daemon -f
+journalctl -u dejima-kvm-rpi -f
 ```
 
 ---
 
-## 3. kvm-daemon.service のカスタマイズ
+## 3. dejima-kvm-rpi.service のカスタマイズ
 
-`/etc/systemd/system/kvm-daemon.service` の内容:
+`/etc/systemd/system/dejima-kvm-rpi.service` の内容:
 
 ```ini
 [Unit]
-Description=KVM-Like HID Daemon
+Description=Dejima KVM HID Daemon (RPi)
 After=graphical.target
 
 [Service]
@@ -256,7 +256,7 @@ Type=simple
 Environment=WAYLAND_DISPLAY=wayland-0
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=DISPLAY=:0
-ExecStart=/usr/local/bin/kvm-daemon -device /dev/ttyAMA0 -baud 115200
+ExecStart=/usr/local/bin/dejima-kvm-daemon-rpi -device /dev/ttyAMA0 -baud 115200
 Restart=always
 RestartSec=3
 User=root
@@ -278,7 +278,7 @@ WantedBy=graphical.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl restart kvm-daemon
+sudo systemctl restart dejima-kvm-rpi
 ```
 
 ---
@@ -290,10 +290,10 @@ sudo systemctl restart kvm-daemon
 ```bash
 # ホスト PC 側
 make build-rpi
-scp build/bin/kvm-daemon ${RPI}:/tmp/
+scp build/bin/dejima-kvm-daemon-rpi ${RPI}:/tmp/
 
 # RPi4 側
-ssh ${RPI} 'sudo systemctl stop kvm-daemon && sudo mv /tmp/kvm-daemon /usr/local/bin/ && sudo systemctl start kvm-daemon'
+ssh ${RPI} 'sudo systemctl stop dejima-kvm-rpi && sudo mv /tmp/dejima-kvm-daemon-rpi /usr/local/bin/ && sudo systemctl start dejima-kvm-rpi'
 ```
 
 ---
@@ -324,7 +324,7 @@ sudo modprobe uinput
 
 - ターミナルアプリにフォーカスがあるか確認
 - `wtype` がインストール済みか確認 (`which wtype`)
-- ログに権限エラーがないか確認: `journalctl -u kvm-daemon --no-pager -n 20`
+- ログに権限エラーがないか確認: `journalctl -u dejima-kvm-rpi --no-pager -n 20`
 
 ### Paste モードで文字が入力されない
 
@@ -338,5 +338,5 @@ sudo modprobe uinput
 ログを確認してください:
 
 ```bash
-journalctl -u kvm-daemon --no-pager -n 50
+journalctl -u dejima-kvm-rpi --no-pager -n 50
 ```

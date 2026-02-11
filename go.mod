@@ -1,4 +1,4 @@
-module github.com/saygox/kvm-like
+module github.com/saygox/dejima
 
 go 1.24.0
 

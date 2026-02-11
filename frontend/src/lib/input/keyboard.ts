@@ -42,6 +42,45 @@ async function handleCtrlV(): Promise<void> {
   }
 }
 
+async function handleCtrlShiftV(): Promise<void> {
+  try {
+    const text = await ClipboardGetText();
+    if (text) {
+      await releaseHeldModifiers();
+      await SendText(text, true);
+    } else {
+      await releaseHeldModifiers();
+      await SendKeyEvent('ControlLeft', true);
+      await SendKeyEvent('ShiftLeft', true);
+      await SendKeyEvent('KeyV', true);
+      await SendKeyEvent('KeyV', false);
+      await SendKeyEvent('ShiftLeft', false);
+      await SendKeyEvent('ControlLeft', false);
+    }
+  } catch {
+    await releaseHeldModifiers();
+    await SendKeyEvent('ControlLeft', true);
+    await SendKeyEvent('ShiftLeft', true);
+    await SendKeyEvent('KeyV', true);
+    await SendKeyEvent('KeyV', false);
+    await SendKeyEvent('ShiftLeft', false);
+    await SendKeyEvent('ControlLeft', false);
+  }
+}
+
+async function handleCtrlShiftC(): Promise<void> {
+  try {
+    await releaseHeldModifiers();
+    await SendKeyEvent('ControlLeft', true);
+    await SendKeyEvent('ShiftLeft', true);
+    await SendKeyEvent('KeyC', true);
+    await SendKeyEvent('KeyC', false);
+    await SendKeyEvent('ShiftLeft', false);
+    await SendKeyEvent('ControlLeft', false);
+  } catch { /* best effort */ }
+  scheduleClipboardSync();
+}
+
 async function handleCtrlC(): Promise<void> {
   try {
     await releaseHeldModifiers();
@@ -79,6 +118,18 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.code === 'Escape') return;
   pressedKeys.add(e.code);
 
+  // Cmd+Shift+V: sync host clipboard → remote terminal paste (Ctrl+Shift+V)
+  if (e.code === 'KeyV' && e.shiftKey && (e.metaKey || e.ctrlKey)) {
+    handleCtrlShiftV();
+    return;
+  }
+
+  // Cmd+Shift+C: send Ctrl+Shift+C to remote terminal, then sync clipboard
+  if (e.code === 'KeyC' && e.shiftKey && (e.metaKey || e.ctrlKey)) {
+    handleCtrlShiftC();
+    return;
+  }
+
   // Cmd+V / Ctrl+V: sync host clipboard → remote paste
   if (e.code === 'KeyV' && (e.metaKey || e.ctrlKey)) {
     handleCtrlV();
@@ -95,6 +146,41 @@ function onKeyDown(e: KeyboardEvent) {
   // fires immediately before we know if Cmd+V/C will follow.
   // Use Tools > Send Key for Super if needed.
   if (e.code === 'MetaLeft' || e.code === 'MetaRight') return;
+
+  // Ctrl+Tab / Ctrl+Shift+Tab → Alt+Tab / Alt+Shift+Tab (window switch on remote Linux)
+  // Cmd+Tab is intercepted by macOS, so Ctrl+Tab is used as the trigger instead.
+  if (e.code === 'Tab' && e.ctrlKey && !e.metaKey) {
+    const combo = e.shiftKey
+      ? [['AltLeft', true], ['ShiftLeft', true], ['Tab', true], ['Tab', false], ['ShiftLeft', false], ['AltLeft', false]] as const
+      : [['AltLeft', true], ['Tab', true], ['Tab', false], ['AltLeft', false]] as const;
+    (async () => {
+      await releaseHeldModifiers();
+      for (const [code, down] of combo) await SendKeyEvent(code, down);
+    })().catch(console.error);
+    return;
+  }
+
+  // Cmd+Option+Arrow Left/Right → Ctrl+Shift+Tab / Ctrl+Tab (browser tab switch on Linux)
+  if (e.metaKey && e.altKey && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+    const combo = e.code === 'ArrowLeft'
+      ? [['ControlLeft', true], ['ShiftLeft', true], ['Tab', true], ['Tab', false], ['ShiftLeft', false], ['ControlLeft', false]] as const
+      : [['ControlLeft', true], ['Tab', true], ['Tab', false], ['ControlLeft', false]] as const;
+    (async () => {
+      await releaseHeldModifiers();
+      for (const [code, down] of combo) await SendKeyEvent(code, down);
+    })().catch(console.error);
+    return;
+  }
+
+  // Cmd+Arrow Left/Right → Alt+Arrow (browser back/forward on Linux)
+  if (e.metaKey && !e.altKey && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+    SendKeyEvent('AltLeft', true)
+      .then(() => SendKeyEvent(e.code, true))
+      .then(() => SendKeyEvent(e.code, false))
+      .then(() => SendKeyEvent('AltLeft', false))
+      .catch(console.error);
+    return;
+  }
 
   // Cmd+key (not C/V, already handled above) → translate to Ctrl+key for remote
   if (e.metaKey) {
