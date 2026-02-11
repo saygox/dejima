@@ -146,6 +146,7 @@ func (c *Controller) SendText(text string, paste bool) error {
 			Payload: protocol.TextInputEvent{
 				Text:  chunk,
 				Paste: paste,
+				Final: len(data) == 0, // last (or only) chunk
 			},
 		}
 		if err := c.send(msg); err != nil {

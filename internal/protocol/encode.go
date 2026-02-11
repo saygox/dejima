@@ -72,9 +72,14 @@ func Encode(msg Message) ([]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("invalid payload for TEXT_INPUT")
 		}
+		// mode byte: 0x00 = type (immediate), 0x01 = paste final, 0x02 = paste more coming
 		var mode byte
 		if ev.Paste {
-			mode = 0x01
+			if ev.Final {
+				mode = 0x01
+			} else {
+				mode = 0x02
+			}
 		}
 		textBytes := []byte(ev.Text)
 		buf := make([]byte, 2+len(textBytes))

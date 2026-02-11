@@ -73,6 +73,7 @@ type ACKEvent struct {
 type TextInputEvent struct {
 	Text  string
 	Paste bool // false = type (wtype/xdotool), true = paste (wl-copy + Ctrl+V)
+	Final bool // true = last (or only) chunk; RPi should flush accumulated text
 }
 
 // ClipboardDataEvent carries clipboard text from RPi to host.

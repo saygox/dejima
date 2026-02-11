@@ -32,6 +32,7 @@ type Injector struct {
 	backend     displayBackend
 	env         []string // environment for subprocess calls
 	sessionUser string   // desktop session user (e.g. "pi") for running wtype/wl-paste
+	pasteBuf    []byte   // accumulates paste-mode text chunks until Final
 }
 
 // New creates a new uinput Injector.
@@ -270,11 +271,19 @@ func (inj *Injector) GetClipboard() (string, error) {
 // TypeText sends a UTF-8 string to the focused application.
 // paste=false (Type mode): uses wtype (Wayland) or xdotool (X11) to simulate keystrokes.
 // paste=true (Paste mode): sets clipboard with wl-copy/xclip, then sends Ctrl+V via uinput.
-func (inj *Injector) TypeText(text string, paste bool) error {
-	if paste {
-		return inj.typeTextPaste(text)
+// When final=false, text is accumulated in a buffer; when final=true, the full buffer is flushed.
+func (inj *Injector) TypeText(text string, paste bool, final bool) error {
+	if !paste {
+		return inj.typeTextDirect(text)
 	}
-	return inj.typeTextDirect(text)
+	// Paste mode: accumulate chunks until final
+	inj.pasteBuf = append(inj.pasteBuf, text...)
+	if !final {
+		return nil // more chunks coming
+	}
+	full := string(inj.pasteBuf)
+	inj.pasteBuf = inj.pasteBuf[:0]
+	return inj.typeTextPaste(full)
 }
 
 // typeTextDirect types text using wtype (Wayland) or xdotool (X11).

@@ -61,6 +61,7 @@ type MouseAbsEvent struct {
 type TextInputEvent struct {
 	Text  string
 	Paste bool // false = type (wtype/xdotool), true = paste (wl-copy + Ctrl+V)
+	Final bool // true = last (or only) chunk; flush accumulated text
 }
 
 type Message struct {
@@ -144,10 +145,12 @@ func Decode(payload []byte) (Message, error) {
 		if len(data) < 1 {
 			return Message{}, errorf("TEXT_INPUT expects at least 1 byte (mode), got %d", len(data))
 		}
-		paste := data[0] != 0x00
+		// mode: 0x00 = type (immediate), 0x01 = paste final, 0x02 = paste more coming
+		paste := data[0] == 0x01 || data[0] == 0x02
+		final := data[0] != 0x02
 		return Message{
 			Type:    MsgTextInput,
-			Payload: TextInputEvent{Text: string(data[1:]), Paste: paste},
+			Payload: TextInputEvent{Text: string(data[1:]), Paste: paste, Final: final},
 		}, nil
 
 	case MsgDiagReq:
