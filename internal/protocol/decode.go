@@ -84,6 +84,12 @@ func Decode(payload []byte) (Message, error) {
 			Payload: DiagDataEvent{Text: string(data)},
 		}, nil
 
+	case MsgClipboardNotify:
+		return Message{
+			Type:    MsgClipboardNotify,
+			Payload: ClipboardNotifyEvent{Text: string(data)},
+		}, nil
+
 	case MsgACK:
 		if len(data) != 1 {
 			return Message{}, fmt.Errorf("ACK expects 1 byte, got %d", len(data))

@@ -5,7 +5,7 @@
   import StatusBar from './lib/components/StatusBar.svelte';
   import AVSettingsModal from './lib/components/AVSettingsModal.svelte';
   import SerialSettingsModal from './lib/components/SerialSettingsModal.svelte';
-  import { GetConfig, ListVideoDevices, StartVideo, ListSerialPorts, ConnectSerial, SendText, SendKeyEvent, GetRemoteClipboard, GetRemoteDiag, GetVideoDiag } from '../wailsjs/go/main/App';
+  import { GetConfig, ListVideoDevices, StartVideo, ListSerialPorts, ConnectSerial, SendText, SendKeyEvent, GetRemoteClipboard, GetRemoteDiag, GetVideoDiag, WriteRemoteClipToHost, TestClipboardPipeline } from '../wailsjs/go/main/App';
   import { updateVideo, updateVideoDevice, updateSerial } from './lib/stores/connection';
 
   let showAVSettings = false;
@@ -66,7 +66,7 @@
     try {
       const text = await GetRemoteClipboard();
       if (text) {
-        await navigator.clipboard.writeText(text);
+        await WriteRemoteClipToHost(text);
         clipboardStatus = 'Copied!';
       } else {
         clipboardStatus = 'Empty';
@@ -88,6 +88,18 @@
     showDiag = true;
     try {
       diagText = await GetRemoteDiag();
+    } catch (e) {
+      diagText = `Error: ${e}`;
+    }
+    diagLoading = false;
+  }
+
+  async function runClipboardTest() {
+    diagLoading = true;
+    diagText = '';
+    showDiag = true;
+    try {
+      diagText = await TestClipboardPipeline();
     } catch (e) {
       diagText = `Error: ${e}`;
     }
@@ -159,6 +171,7 @@
   onMount(async () => {
     cancelFns.push(EventsOn('menu:typeText', openTextInput));
     cancelFns.push(EventsOn('menu:getClipboard', getRemoteClipboard));
+    cancelFns.push(EventsOn('menu:testClipboard', runClipboardTest));
     cancelFns.push(EventsOn('menu:videoDiag', runVideoDiag));
     cancelFns.push(EventsOn('menu:rpiDiag', runDiagnostics));
     cancelFns.push(EventsOn('menu:sendKey', handleSendKey));

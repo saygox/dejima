@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/saygox/dejima/internal/audio"
+	"github.com/saygox/dejima/internal/clipboard"
 	"github.com/saygox/dejima/internal/config"
 	"github.com/saygox/dejima/internal/hid"
 	"github.com/saygox/dejima/internal/protocol"
@@ -28,6 +29,13 @@ type App struct {
 	hid        *hid.Controller
 	serialPort *serial.Port
 	streamAddr string // "http://localhost:<port>" for MJPEG stream
+
+	// Clipboard smart-paste state
+	clipMu           sync.Mutex
+	lastRemoteClip   string // last known remote clipboard content (from notify or sent)
+	lastHostClipText string // last known host clipboard content (for WriteRemoteClipToHost guard)
+	lastSentToRemote string // echo filter: text we just pasted to remote
+	clipNotifyStopCh chan struct{}
 }
 
 // NewApp creates a new App instance.
@@ -51,6 +59,9 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.startStreamServer()
+	if text, err := clipboard.Read(); err == nil {
+		a.lastHostClipText = text
+	}
 }
 
 // shutdown is called when the Wails app is closing.
@@ -286,6 +297,10 @@ func (a *App) ConnectSerial(portName string) error {
 	a.serialPort = port
 	a.hid.SetPort(port)
 
+	// Start listening for remote clipboard notifications
+	a.clipNotifyStopCh = make(chan struct{})
+	go a.remoteClipNotifyListener(port, a.clipNotifyStopCh)
+
 	a.cfg.SerialPort = portName
 	_ = a.cfg.Save()
 
@@ -295,9 +310,18 @@ func (a *App) ConnectSerial(portName string) error {
 // DisconnectSerial closes the current serial connection.
 func (a *App) DisconnectSerial() {
 	if a.serialPort != nil {
+		if a.clipNotifyStopCh != nil {
+			close(a.clipNotifyStopCh)
+			a.clipNotifyStopCh = nil
+		}
 		a.hid.SetPort(nil)
 		_ = a.serialPort.Close()
 		a.serialPort = nil
+
+		// Reset remote clipboard so host-paste is preferred
+		a.clipMu.Lock()
+		a.lastRemoteClip = ""
+		a.clipMu.Unlock()
 	}
 }
 
@@ -339,7 +363,16 @@ func (a *App) SendMouseScroll(delta int) error {
 // SendText sends a UTF-8 text string to the remote machine.
 // paste=false uses wtype/xdotool (for terminals), paste=true uses wl-copy+Ctrl+V (for browsers).
 func (a *App) SendText(text string, paste bool) error {
-	return a.hid.SendText(text, paste)
+	truncated := text
+	if len(truncated) > 50 {
+		truncated = truncated[:50]
+	}
+	log.Printf("SendText: paste=%v len=%d text=%q", paste, len(text), truncated)
+	err := a.hid.SendText(text, paste)
+	if err != nil {
+		log.Printf("SendText: error: %v", err)
+	}
+	return err
 }
 
 // GetRemoteClipboard requests clipboard text from the RPi and returns it.
@@ -365,8 +398,189 @@ func (a *App) GetRemoteClipboard() (string, error) {
 	case text := <-a.serialPort.IncomingClipboard:
 		return text, nil
 	case <-time.After(3 * time.Second):
+		log.Printf("GetRemoteClipboard: timed out after 3s")
 		return "", fmt.Errorf("clipboard request timed out")
 	}
+}
+
+// TestClipboardPipeline runs a diagnostic test of the clipboard pipeline
+// and returns a multi-line result string.
+func (a *App) TestClipboardPipeline() string {
+	var lines []string
+	w := func(format string, args ...interface{}) {
+		lines = append(lines, fmt.Sprintf(format, args...))
+	}
+
+	w("=== Clipboard Pipeline Test ===")
+	w("")
+
+	// Step 1: Host clipboard read
+	w("1. Host clipboard read (clipboard.Read)")
+	hostText, err := clipboard.Read()
+	if err != nil {
+		w("   ERROR: %v", err)
+	} else if hostText == "" {
+		w("   OK (empty clipboard)")
+	} else {
+		preview := hostText
+		if len(preview) > 60 {
+			preview = preview[:60] + "..."
+		}
+		w("   OK: %d bytes — %q", len(hostText), preview)
+	}
+	w("")
+
+	// Step 2: Serial connection
+	w("2. Serial connection")
+	if a.serialPort == nil {
+		w("   ERROR: not connected")
+		w("")
+		w("Pipeline test stopped — serial required for remaining steps.")
+		return joinLines(lines)
+	}
+	w("   OK: %s", a.serialPort.Name())
+	w("")
+
+	// Step 3: Send test text to RPi
+	testStr := fmt.Sprintf("dejima-test-%s", time.Now().Format("150405"))
+	w("3. Send test text to RPi (hid.SendText)")
+	w("   Sending: %q", testStr)
+	if err := a.hid.SendText(testStr, true); err != nil {
+		w("   ERROR: %v", err)
+	} else {
+		w("   OK: sent successfully")
+	}
+	w("")
+
+	// Step 4: Get remote clipboard
+	w("4. Get remote clipboard (GetRemoteClipboard)")
+	remoteText, err := a.GetRemoteClipboard()
+	if err != nil {
+		w("   ERROR: %v", err)
+	} else if remoteText == "" {
+		w("   OK (empty)")
+	} else {
+		preview := remoteText
+		if len(preview) > 60 {
+			preview = preview[:60] + "..."
+		}
+		w("   OK: %d bytes — %q", len(remoteText), preview)
+	}
+
+	return joinLines(lines)
+}
+
+func truncForLog(s string) string {
+	if len(s) > 50 {
+		return s[:50] + "..."
+	}
+	return s
+}
+
+func joinLines(lines []string) string {
+	result := ""
+	for i, l := range lines {
+		if i > 0 {
+			result += "\n"
+		}
+		result += l
+	}
+	return result
+}
+
+// --- Clipboard Smart Paste ---
+
+// remoteClipNotifyListener reads ClipboardNotify messages from the serial port.
+func (a *App) remoteClipNotifyListener(port *serial.Port, stop <-chan struct{}) {
+	for {
+		select {
+		case <-stop:
+			return
+		case text := <-port.IncomingClipNotify:
+			log.Printf("[clip-notify] received: len=%d text=%q", len(text), truncForLog(text))
+			// Read host clipboard BEFORE taking lock (external command may be slow)
+			hostClip, hostErr := clipboard.Read()
+
+			a.clipMu.Lock()
+			// Skip echo: if this matches what we just sent to remote, ignore it
+			if text == a.lastSentToRemote {
+				log.Printf("[clip-notify] echo filtered (matches lastSentToRemote)")
+				a.lastSentToRemote = ""
+				a.clipMu.Unlock()
+				continue
+			}
+			a.lastRemoteClip = text
+			// Sync lastHostClipText so stale diffs don't trigger
+			// SendText on the next Cmd+V
+			if hostErr == nil {
+				log.Printf("[clip-notify] syncing lastHostClipText, len=%d", len(hostClip))
+				a.lastHostClipText = hostClip
+			}
+			a.clipMu.Unlock()
+		}
+	}
+}
+
+// ResolveClipboardForPaste reads the host clipboard and decides whether to
+// send the text to the remote. If the host clipboard changed since last check,
+// the user copied something new on the host side — return it for SendText.
+// If unchanged, return "" so the frontend sends a raw Ctrl+V instead,
+// letting the remote use its own clipboard.
+func (a *App) ResolveClipboardForPaste() string {
+	hostClip, err := clipboard.Read()
+	if err != nil {
+		log.Printf("[resolve-paste] clipboard read error: %v", err)
+		return ""
+	}
+
+	a.clipMu.Lock()
+	defer a.clipMu.Unlock()
+
+	if hostClip != a.lastHostClipText {
+		// Host clipboard changed — user copied something new on host
+		log.Printf("[resolve-paste] host changed → SendText, hostClip=%q lastHostClipText=%q",
+			truncForLog(hostClip), truncForLog(a.lastHostClipText))
+		a.lastHostClipText = hostClip
+		return hostClip
+	}
+
+	// Host clipboard unchanged — let remote use its own clipboard (raw Ctrl+V)
+	log.Printf("[resolve-paste] host unchanged → raw Ctrl+V")
+	return ""
+}
+
+// MarkSentToRemote records text that was just pasted to the remote,
+// so the echo notification from RPi can be filtered out.
+func (a *App) MarkSentToRemote(text string) {
+	a.clipMu.Lock()
+	defer a.clipMu.Unlock()
+	// Truncate to match what RPi will send back (max 200 bytes)
+	if len(text) > 200 {
+		text = text[:200]
+	}
+	a.lastSentToRemote = text
+	a.lastRemoteClip = text // remote now has this content too
+}
+
+// WriteRemoteClipToHost writes text to the host clipboard and tracks it
+// so the next ResolveClipboardForPaste call doesn't treat it as a user-initiated change.
+// If the user has changed the clipboard since the last known state, the write is skipped
+// to avoid overwriting the user's content.
+func (a *App) WriteRemoteClipToHost(text string) error {
+	currentClip, readErr := clipboard.Read()
+
+	a.clipMu.Lock()
+	if readErr == nil && currentClip != a.lastHostClipText {
+		// User has changed the clipboard since we last checked — don't overwrite
+		a.lastHostClipText = currentClip
+		a.clipMu.Unlock()
+		return nil
+	}
+	a.lastRemoteClip = text
+	a.lastHostClipText = text
+	a.clipMu.Unlock()
+
+	return clipboard.Write(text)
 }
 
 // --- Diagnostics ---

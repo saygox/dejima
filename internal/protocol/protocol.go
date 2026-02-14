@@ -11,7 +11,8 @@ const (
 	MsgClipboardData    byte = 0x07
 	MsgMouseAbs    byte = 0x08
 	MsgDiagReq     byte = 0x09
-	MsgDiagData    byte = 0x0A
+	MsgDiagData         byte = 0x0A
+	MsgClipboardNotify  byte = 0x0B
 	MsgACK              byte = 0x10
 	MsgPing        byte = 0xFF
 )
@@ -76,8 +77,13 @@ type TextInputEvent struct {
 	Final bool // true = last (or only) chunk; RPi should flush accumulated text
 }
 
-// ClipboardDataEvent carries clipboard text from RPi to host.
+// ClipboardDataEvent carries clipboard text from RPi to host (response to ClipboardReq).
 type ClipboardDataEvent struct {
+	Text string
+}
+
+// ClipboardNotifyEvent is an unsolicited notification that the RPi clipboard changed.
+type ClipboardNotifyEvent struct {
 	Text string
 }
 

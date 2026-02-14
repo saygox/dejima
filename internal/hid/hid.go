@@ -141,12 +141,14 @@ func (c *Controller) SendText(text string, paste bool) error {
 		chunk := string(data[:end])
 		data = data[end:]
 
+		final := len(data) == 0
+		log.Printf("hid: sending text chunk paste=%v final=%v len=%d", paste, final, len(chunk))
 		msg := protocol.Message{
 			Type: protocol.MsgTextInput,
 			Payload: protocol.TextInputEvent{
 				Text:  chunk,
 				Paste: paste,
-				Final: len(data) == 0, // last (or only) chunk
+				Final: final,
 			},
 		}
 		if err := c.send(msg); err != nil {

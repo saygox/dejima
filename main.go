@@ -63,6 +63,9 @@ func buildAppMenu(app *App) *menu.Menu {
 	}
 
 	tools.AddSeparator()
+	tools.AddText("Test Clipboard Pipeline...", nil, func(_ *menu.CallbackData) {
+		wailsRuntime.EventsEmit(app.ctx, "menu:testClipboard")
+	})
 	tools.AddText("Video Diagnostics...", nil, func(_ *menu.CallbackData) {
 		wailsRuntime.EventsEmit(app.ctx, "menu:videoDiag")
 	})

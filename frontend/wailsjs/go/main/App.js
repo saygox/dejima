@@ -70,6 +70,14 @@ export function ListVideoDevices() {
   return window['go']['main']['App']['ListVideoDevices']();
 }
 
+export function MarkSentToRemote(arg1) {
+  return window['go']['main']['App']['MarkSentToRemote'](arg1);
+}
+
+export function ResolveClipboardForPaste() {
+  return window['go']['main']['App']['ResolveClipboardForPaste']();
+}
+
 export function SaveConfig() {
   return window['go']['main']['App']['SaveConfig']();
 }
@@ -128,4 +136,12 @@ export function StartVideo() {
 
 export function StopVideo() {
   return window['go']['main']['App']['StopVideo']();
+}
+
+export function TestClipboardPipeline() {
+  return window['go']['main']['App']['TestClipboardPipeline']();
+}
+
+export function WriteRemoteClipToHost(arg1) {
+  return window['go']['main']['App']['WriteRemoteClipToHost'](arg1);
 }

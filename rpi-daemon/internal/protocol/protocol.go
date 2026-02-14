@@ -13,8 +13,9 @@ const (
 	MsgClipboardData byte = 0x07
 	MsgMouseAbs  byte = 0x08
 	MsgDiagReq   byte = 0x09
-	MsgDiagData  byte = 0x0A
-	MsgACK           byte = 0x10
+	MsgDiagData        byte = 0x0A
+	MsgClipboardNotify byte = 0x0B
+	MsgACK             byte = 0x10
 	MsgPing        byte = 0xFF
 )
 
@@ -179,6 +180,15 @@ func EncodeDiagData(text string) []byte {
 	data := []byte(text)
 	buf := make([]byte, 1+len(data))
 	buf[0] = MsgDiagData
+	copy(buf[1:], data)
+	return buf
+}
+
+// EncodeClipboardNotify creates a CLIPBOARD_NOTIFY payload (unsolicited clipboard change).
+func EncodeClipboardNotify(text string) []byte {
+	data := []byte(text)
+	buf := make([]byte, 1+len(data))
+	buf[0] = MsgClipboardNotify
 	copy(buf[1:], data)
 	return buf
 }

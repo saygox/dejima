@@ -21,8 +21,10 @@ type Port struct {
 	name   string
 	stopCh chan struct{}
 
-	// IncomingClipboard receives clipboard data sent from RPi.
+	// IncomingClipboard receives clipboard data sent from RPi (response to ClipboardReq).
 	IncomingClipboard chan string
+	// IncomingClipNotify receives unsolicited clipboard change notifications from RPi.
+	IncomingClipNotify chan string
 	// IncomingDiag receives diagnostic data chunks from RPi.
 	// Empty string signals end of diagnostic output.
 	IncomingDiag chan string
@@ -47,9 +49,10 @@ func Open(portName string, baudRate int) (*Port, error) {
 	port := &Port{
 		port:              p,
 		name:              portName,
-		stopCh:            make(chan struct{}),
-		IncomingClipboard: make(chan string, 1),
-		IncomingDiag:      make(chan string, 16),
+		stopCh:             make(chan struct{}),
+		IncomingClipboard:  make(chan string, 1),
+		IncomingClipNotify: make(chan string, 1),
+		IncomingDiag:       make(chan string, 16),
 	}
 
 	go port.readLoop()
@@ -119,6 +122,16 @@ func (p *Port) readLoop() {
 				default:
 				}
 				p.IncomingClipboard <- ev.Text
+			}
+		case protocol.ClipboardNotifyEvent:
+			select {
+			case p.IncomingClipNotify <- ev.Text:
+			default:
+				select {
+				case <-p.IncomingClipNotify:
+				default:
+				}
+				p.IncomingClipNotify <- ev.Text
 			}
 		case protocol.DiagDataEvent:
 			select {

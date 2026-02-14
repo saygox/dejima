@@ -273,16 +273,19 @@ func (inj *Injector) GetClipboard() (string, error) {
 // paste=true (Paste mode): sets clipboard with wl-copy/xclip, then sends Ctrl+V via uinput.
 // When final=false, text is accumulated in a buffer; when final=true, the full buffer is flushed.
 func (inj *Injector) TypeText(text string, paste bool, final bool) error {
+	log.Printf("injector: TypeText paste=%v final=%v len=%d", paste, final, len(text))
 	if !paste {
 		return inj.typeTextDirect(text)
 	}
 	// Paste mode: accumulate chunks until final
 	inj.pasteBuf = append(inj.pasteBuf, text...)
 	if !final {
+		log.Printf("injector: buffering chunk, pasteBuf len=%d", len(inj.pasteBuf))
 		return nil // more chunks coming
 	}
 	full := string(inj.pasteBuf)
 	inj.pasteBuf = inj.pasteBuf[:0]
+	log.Printf("injector: flushing pasteBuf len=%d", len(full))
 	return inj.typeTextPaste(full)
 }
 
@@ -304,6 +307,7 @@ func (inj *Injector) typeTextDirect(text string) error {
 // typeTextPaste types text via clipboard paste (wl-copy/xclip + Ctrl+V).
 // Works in browsers but not in terminals where Ctrl+V has different meaning.
 func (inj *Injector) typeTextPaste(text string) error {
+	log.Printf("injector: typeTextPaste backend=%s len=%d", backendName(inj.backend), len(text))
 	var cmd *exec.Cmd
 	if inj.backend == backendWayland {
 		cmd = inj.sessionCmd("wl-copy", "--", text)
@@ -311,9 +315,24 @@ func (inj *Injector) typeTextPaste(text string) error {
 		cmd = inj.sessionCmd("xclip", "-selection", "clipboard")
 		cmd.Stdin = strings.NewReader(text)
 	}
-	if err := cmd.Run(); err != nil {
+	// wl-copy (and xclip) stay alive to serve clipboard content.
+	// When called via runuser, runuser waits for all children to exit,
+	// so CombinedOutput() blocks forever. Use Start + background reap instead.
+	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("set clipboard (%s): %w", backendName(inj.backend), err)
 	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- cmd.Wait() }()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return fmt.Errorf("set clipboard (%s): %w", backendName(inj.backend), err)
+		}
+		// Process exited quickly — clipboard set OK
+	case <-time.After(500 * time.Millisecond):
+		// Process still running (wl-copy via runuser stays alive) — clipboard is set
+	}
+	log.Printf("injector: clipboard set, sending Ctrl+V")
 
 	time.Sleep(50 * time.Millisecond)
 	inj.keyboard.KeyDown(uinput.KeyLeftctrl)
@@ -321,6 +340,7 @@ func (inj *Injector) typeTextPaste(text string) error {
 	time.Sleep(30 * time.Millisecond)
 	inj.keyboard.KeyUp(uinput.KeyV)
 	inj.keyboard.KeyUp(uinput.KeyLeftctrl)
+	log.Printf("injector: Ctrl+V sent")
 	return nil
 }
 

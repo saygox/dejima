@@ -9,8 +9,8 @@
 
   let videoContainer: HTMLElement;
   let imeInput: HTMLTextAreaElement;
-  const TITLE_DEFAULT = 'KVM-Like';
-  const TITLE_CAPTURED = 'KVM-Like — Input captured (Esc to release)';
+  const TITLE_DEFAULT = 'Dejima KVM';
+  const TITLE_CAPTURED = 'Dejima KVM — Input captured (Esc to release)';
 
   let captured = false;
 

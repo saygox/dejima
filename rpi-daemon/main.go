@@ -9,8 +9,10 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/saygox/dejima/rpi-daemon/internal/injector"
 	"github.com/saygox/dejima/rpi-daemon/internal/protocol"
@@ -39,6 +41,14 @@ func main() {
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Printf("dejima-kvm-daemon-rpi %s starting: device=%s baud=%d", buildVersion, *device, *baud)
+	log.Printf("BUILD FINGERPRINT: go=%s os=%s arch=%s", runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range bi.Settings {
+			if s.Key == "vcs.revision" || s.Key == "vcs.time" {
+				log.Printf("BUILD FINGERPRINT: %s=%s", s.Key, s.Value)
+			}
+		}
+	}
 
 	// Open UART
 	port, err := uart.Open(*device, *baud)
@@ -57,14 +67,19 @@ func main() {
 	// Handle shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	stopCh := make(chan struct{})
 
 	go func() {
 		<-sigCh
 		log.Printf("shutting down...")
+		close(stopCh)
 		inj.Close()
 		port.Close()
 		os.Exit(0)
 	}()
+
+	// Clipboard monitor: poll remote clipboard and send notifications on change
+	go clipboardMonitor(port, inj, stopCh)
 
 	// Main loop: read frames and inject events
 	log.Printf("listening for HID events...")
@@ -83,6 +98,43 @@ func main() {
 		}
 
 		handleMessage(port, inj, msg)
+	}
+}
+
+// clipboardMonitor polls the remote clipboard every 2s and sends
+// MsgClipboardNotify over serial when the content changes.
+func clipboardMonitor(port *uart.Port, inj *injector.Injector, stop <-chan struct{}) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	var lastContent string
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			text, err := inj.GetClipboard()
+			if err != nil {
+				log.Printf("clipboard monitor: read error: %v", err)
+				continue
+			}
+			if text == lastContent {
+				continue
+			}
+			truncated := text
+			if len(truncated) > 50 {
+				truncated = truncated[:50]
+			}
+			log.Printf("clipboard monitor: change detected, len=%d text=%q", len(text), truncated)
+			lastContent = text
+			// Truncate to fit in serial frame
+			if len(text) > 200 {
+				text = text[:200]
+			}
+			if err := port.WriteFrame(protocol.EncodeClipboardNotify(text)); err != nil {
+				log.Printf("clipboard notify send error: %v", err)
+			}
+		}
 	}
 }
 
@@ -141,6 +193,11 @@ func handleMessage(port *uart.Port, inj *injector.Injector, msg protocol.Message
 		sendACK(port, protocol.ACKOk)
 
 	case protocol.TextInputEvent:
+		truncated := ev.Text
+		if len(truncated) > 50 {
+			truncated = truncated[:50]
+		}
+		log.Printf("text input: paste=%v final=%v len=%d text=%q", ev.Paste, ev.Final, len(ev.Text), truncated)
 		if err := inj.TypeText(ev.Text, ev.Paste, ev.Final); err != nil {
 			log.Printf("text input error: %v", err)
 			sendACK(port, protocol.ACKError)
@@ -156,6 +213,7 @@ func handleMessage(port *uart.Port, inj *injector.Injector, msg protocol.Message
 			return
 		}
 		if msg.Type == protocol.MsgClipboardReq {
+			log.Printf("clipboard request received")
 			text, err := inj.GetClipboard()
 			if err != nil {
 				log.Printf("clipboard read error: %v", err)
@@ -166,6 +224,7 @@ func handleMessage(port *uart.Port, inj *injector.Injector, msg protocol.Message
 			if len(text) > 200 {
 				text = text[:200]
 			}
+			log.Printf("clipboard response: %d bytes", len(text))
 			if err := port.WriteFrame(protocol.EncodeClipboardData(text)); err != nil {
 				log.Printf("clipboard send error: %v", err)
 			}

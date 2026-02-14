@@ -1,5 +1,4 @@
-import { SendKeyEvent, SendText, GetRemoteClipboard } from '../../../wailsjs/go/main/App';
-import { ClipboardGetText, ClipboardSetText } from '../../../wailsjs/runtime/runtime';
+import { SendKeyEvent, SendText, GetRemoteClipboard, ResolveClipboardForPaste, MarkSentToRemote, WriteRemoteClipToHost } from '../../../wailsjs/go/main/App';
 
 let capturing = false;
 // Track currently pressed keys so we can release them all on capture exit
@@ -20,20 +19,26 @@ async function releaseHeldModifiers(): Promise<void> {
 }
 
 async function handleCtrlV(): Promise<void> {
+  console.log('[keyboard] handleCtrlV called');
   try {
-    const text = await ClipboardGetText();
+    const text = await ResolveClipboardForPaste();
+    console.log('[keyboard] ResolveClipboardForPaste returned:', JSON.stringify(text?.substring(0, 50)), 'len=', text?.length);
     if (text) {
       await releaseHeldModifiers();
+      console.log('[keyboard] calling SendText, len=', text.length);
       await SendText(text, true);
+      console.log('[keyboard] SendText succeeded');
+      await MarkSentToRemote(text);
     } else {
-      // Empty clipboard → pass through Ctrl+V to remote
+      console.log('[keyboard] text empty, sending raw Ctrl+V');
       await releaseHeldModifiers();
       await SendKeyEvent('ControlLeft', true);
       await SendKeyEvent('KeyV', true);
       await SendKeyEvent('KeyV', false);
       await SendKeyEvent('ControlLeft', false);
     }
-  } catch {
+  } catch (err) {
+    console.error('[keyboard] handleCtrlV error:', err);
     await releaseHeldModifiers();
     await SendKeyEvent('ControlLeft', true);
     await SendKeyEvent('KeyV', true);
@@ -44,10 +49,11 @@ async function handleCtrlV(): Promise<void> {
 
 async function handleCtrlShiftV(): Promise<void> {
   try {
-    const text = await ClipboardGetText();
+    const text = await ResolveClipboardForPaste();
     if (text) {
       await releaseHeldModifiers();
       await SendText(text, true);
+      await MarkSentToRemote(text);
     } else {
       await releaseHeldModifiers();
       await SendKeyEvent('ControlLeft', true);
@@ -57,7 +63,8 @@ async function handleCtrlShiftV(): Promise<void> {
       await SendKeyEvent('ShiftLeft', false);
       await SendKeyEvent('ControlLeft', false);
     }
-  } catch {
+  } catch (err) {
+    console.error('[keyboard] handleCtrlShiftV error:', err);
     await releaseHeldModifiers();
     await SendKeyEvent('ControlLeft', true);
     await SendKeyEvent('ShiftLeft', true);
@@ -77,7 +84,7 @@ async function handleCtrlShiftC(): Promise<void> {
     await SendKeyEvent('KeyC', false);
     await SendKeyEvent('ShiftLeft', false);
     await SendKeyEvent('ControlLeft', false);
-  } catch { /* best effort */ }
+  } catch (err) { console.error('[keyboard] handleCtrlShiftC error:', err); }
   scheduleClipboardSync();
 }
 
@@ -88,7 +95,7 @@ async function handleCtrlC(): Promise<void> {
     await SendKeyEvent('KeyC', true);
     await SendKeyEvent('KeyC', false);
     await SendKeyEvent('ControlLeft', false);
-  } catch { /* best effort */ }
+  } catch (err) { console.error('[keyboard] handleCtrlC error:', err); }
   scheduleClipboardSync();
 }
 
@@ -99,8 +106,8 @@ function scheduleClipboardSync() {
   clipSyncTimer = setTimeout(async () => {
     try {
       const text = await GetRemoteClipboard();
-      if (text) await ClipboardSetText(text);
-    } catch { /* silent */ }
+      if (text) await WriteRemoteClipToHost(text);
+    } catch (err) { console.error('[keyboard] scheduleClipboardSync error:', err); }
     clipSyncTimer = null;
   }, 300);
 }
@@ -247,6 +254,10 @@ function onFocusOut(e: FocusEvent) {
   }
   releaseAllKeys();
   capturing = false;
+  if (clipSyncTimer) {
+    clearTimeout(clipSyncTimer);
+    clipSyncTimer = null;
+  }
 }
 
 export function startKeyboardCapture(element: HTMLElement) {

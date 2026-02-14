@@ -38,6 +38,10 @@ export function ListSerialPorts():Promise<Array<string>>;
 
 export function ListVideoDevices():Promise<Array<video.VideoDevice>>;
 
+export function MarkSentToRemote(arg1:string):Promise<void>;
+
+export function ResolveClipboardForPaste():Promise<string>;
+
 export function SaveConfig():Promise<void>;
 
 export function SendKeyEvent(arg1:string,arg2:boolean):Promise<void>;
@@ -67,3 +71,7 @@ export function SetDevice(arg1:number,arg2:string):Promise<void>;
 export function StartVideo():Promise<void>;
 
 export function StopVideo():Promise<void>;
+
+export function TestClipboardPipeline():Promise<string>;
+
+export function WriteRemoteClipToHost(arg1:string):Promise<void>;
