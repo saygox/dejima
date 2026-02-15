@@ -1,12 +1,15 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { EventsOn } from '../wailsjs/runtime/runtime';
+  import { get } from 'svelte/store';
+  import { EventsOn, Environment, WindowFullscreen, WindowUnfullscreen, WindowIsFullscreen } from '../wailsjs/runtime/runtime';
   import VideoDisplay from './lib/components/VideoDisplay.svelte';
   import StatusBar from './lib/components/StatusBar.svelte';
+  import TitleBar from './lib/components/TitleBar.svelte';
   import AVSettingsModal from './lib/components/AVSettingsModal.svelte';
   import SerialSettingsModal from './lib/components/SerialSettingsModal.svelte';
   import { GetConfig, ListVideoDevices, StartVideo, ListSerialPorts, ConnectSerial, SendText, SendKeyEvent, GetRemoteClipboard, GetRemoteDiag, GetVideoDiag, WriteRemoteClipToHost, TestClipboardPipeline } from '../wailsjs/go/main/App';
   import { updateVideo, updateVideoDevice, updateSerial } from './lib/stores/connection';
+  import { isFullscreen, platform, isWindows } from './lib/stores/fullscreen';
 
   let showAVSettings = false;
   let showSerialSettings = false;
@@ -168,7 +171,24 @@
   // --- Menu event listeners ---
   const cancelFns: (() => void)[] = [];
 
+  function onGlobalKeydown(e: KeyboardEvent) {
+    if (e.code === 'F11') {
+      e.preventDefault();
+      if (get(isFullscreen)) {
+        WindowUnfullscreen();
+        $isFullscreen = false;
+      } else {
+        WindowFullscreen();
+        $isFullscreen = true;
+      }
+    }
+  }
+
   onMount(async () => {
+    const env = await Environment();
+    $platform = env.platform;
+    $isFullscreen = await WindowIsFullscreen();
+
     cancelFns.push(EventsOn('menu:typeText', openTextInput));
     cancelFns.push(EventsOn('menu:getClipboard', getRemoteClipboard));
     cancelFns.push(EventsOn('menu:testClipboard', runClipboardTest));
@@ -209,7 +229,12 @@
   });
 </script>
 
+<svelte:window on:keydown={onGlobalKeydown} />
+
 <div class="app-layout">
+  {#if $isWindows}
+    <TitleBar />
+  {/if}
   <div class="main-area">
     <VideoDisplay />
   </div>

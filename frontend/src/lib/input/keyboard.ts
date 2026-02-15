@@ -115,6 +115,8 @@ function scheduleClipboardSync() {
 function onKeyDown(e: KeyboardEvent) {
   // During IME composition, don't send raw key events
   if (e.isComposing || e.keyCode === 229) return;
+  // F11 is handled by App.svelte global handler — never forward to remote
+  if (e.code === 'F11') return;
   // Always prevent default to suppress beep on macOS WebView
   e.preventDefault();
   e.stopPropagation();
@@ -204,6 +206,8 @@ function onKeyDown(e: KeyboardEvent) {
 
 function onKeyUp(e: KeyboardEvent) {
   if (e.isComposing || e.keyCode === 229) return;
+  // F11 is handled by App.svelte global handler — never forward to remote
+  if (e.code === 'F11') return;
   e.preventDefault();
   e.stopPropagation();
   if (!capturing) return;

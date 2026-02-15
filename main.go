@@ -13,6 +13,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -87,16 +88,20 @@ func main() {
 	app := NewApp()
 
 	err = wails.Run(&options.App{
-		Title:  "Dejima",
-		Width:  1280,
-		Height: 720,
-		Menu:   buildAppMenu(app),
+		Title:     "Dejima",
+		Width:     1280,
+		Height:    720,
+		Frameless: goruntime.GOOS == "windows",
+		Menu:      buildAppMenu(app),
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
+		Windows: &windows.Options{
+			Theme: windows.Dark,
+		},
 		Mac: &mac.Options{
 			Preferences: &mac.Preferences{
 				FullscreenEnabled: mac.Enabled,
