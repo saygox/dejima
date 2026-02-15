@@ -7,6 +7,7 @@ import (
 	goruntime "runtime"
 
 	"github.com/saygox/dejima/internal/lock"
+	"github.com/saygox/dejima/internal/procgroup"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/menu/keys"
@@ -84,6 +85,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer release()
+
+	_ = procgroup.Init()
 
 	app := NewApp()
 

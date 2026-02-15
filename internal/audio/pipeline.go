@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/saygox/dejima/internal/procgroup"
 )
 
 const (
@@ -117,6 +119,7 @@ func (p *Pipeline) Start(cfg PipelineConfig) error {
 	if err := p.cmd.Start(); err != nil {
 		return fmt.Errorf("starting audio gst-launch: %w", err)
 	}
+	_ = procgroup.Add(p.cmd.Process.Pid)
 	log.Printf("audio: gst-launch started (pid=%d)", p.cmd.Process.Pid)
 
 	p.running = true

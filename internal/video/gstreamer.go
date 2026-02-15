@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/saygox/dejima/internal/procgroup"
 )
 
 // VideoDevice represents a detected video capture device.
@@ -205,6 +207,7 @@ func (p *Pipeline) Start() error {
 	if err := p.cmd.Start(); err != nil {
 		return fmt.Errorf("starting gst-launch: %w", err)
 	}
+	_ = procgroup.Add(p.cmd.Process.Pid)
 
 	p.running = true
 	p.stopCh = make(chan struct{})
