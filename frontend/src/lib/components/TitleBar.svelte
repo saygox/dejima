@@ -113,11 +113,12 @@
   class:fullscreen={$isFullscreen}
   on:mouseleave={onBarLeave}
   on:mouseenter={cancelHide}
+  on:dblclick={doToggleFullscreen}
   style="--wails-draggable: drag"
 >
   <!-- Left: Tools menu -->
-  <div class="title-section left" style="--wails-draggable: no-drag">
-    <div class="tools-menu-wrapper">
+  <div class="title-section left">
+    <div class="tools-menu-wrapper" style="--wails-draggable: no-drag">
       <button class="tools-btn" on:click={toggleMenu}>
         Tools
         <span class="arrow">{menuOpen ? '\u25B4' : '\u25BE'}</span>
@@ -156,7 +157,7 @@
   </div>
 
   <!-- Right: Window controls -->
-  <div class="title-section right" style="--wails-draggable: no-drag">
+  <div class="title-section right">
     <button class="win-btn minimize" on:click={doMinimise} title="Minimize">
       <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
     </button>
@@ -320,6 +321,7 @@
 
   /* Window control buttons */
   .win-btn {
+    --wails-draggable: no-drag;
     display: flex;
     align-items: center;
     justify-content: center;
