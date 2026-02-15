@@ -340,3 +340,89 @@ sudo modprobe uinput
 ```bash
 journalctl -u dejima-kvm-rpi --no-pager -n 50
 ```
+
+---
+
+## 6. アンインストール手順
+
+Dejima KVM のシリアル UART 設定をすべて元に戻し、デーモンを削除する手順です。
+
+### デーモンの停止・削除
+
+```bash
+# サービスの停止と無効化
+sudo systemctl stop dejima-kvm-rpi
+sudo systemctl disable dejima-kvm-rpi
+
+# サービスファイルの削除
+sudo rm /etc/systemd/system/dejima-kvm-rpi.service
+sudo systemctl daemon-reload
+
+# バイナリの削除
+sudo rm /usr/local/bin/dejima-kvm-daemon-rpi
+```
+
+### UART 設定の復元
+
+#### config.txt から Dejima の設定を削除
+
+```bash
+sudo nano /boot/firmware/config.txt
+```
+
+ファイル末尾に追加した以下の行を削除してください:
+
+```ini
+# Dejima: PL011 UART を GPIO14/15 に割り当て、BT を無効化
+dtoverlay=disable-bt
+enable_uart=1
+```
+
+#### Bluetooth の再有効化
+
+```bash
+sudo systemctl enable hciuart
+sudo systemctl enable bluetooth
+```
+
+#### シリアルコンソールの再有効化 (必要な場合)
+
+セットアップ時にシリアルコンソールを無効にした場合、必要に応じて再有効化できます。
+
+```bash
+sudo raspi-config nonint do_serial_cons 0   # 0 = enable
+
+# または手動で
+sudo systemctl enable serial-getty@ttyAMA0.service
+```
+
+### uinput 自動ロードの解除 (任意)
+
+他のアプリケーションが uinput を使用していなければ削除できます。
+
+```bash
+sudo rm /etc/modules-load.d/uinput.conf
+```
+
+### インストールしたパッケージの削除 (任意)
+
+`wtype` や `wl-clipboard` が他の用途で不要であれば削除できます。
+
+```bash
+sudo apt remove -y wtype wl-clipboard
+```
+
+### 再起動
+
+すべての変更を反映するために再起動してください。
+
+```bash
+sudo reboot
+```
+
+再起動後、Bluetooth が復活していることを確認:
+
+```bash
+systemctl is-active bluetooth    # active であること
+hciconfig                        # hci0 が表示されること
+```
