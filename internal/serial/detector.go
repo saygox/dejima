@@ -48,7 +48,9 @@ func detectDarwin() (string, error) {
 
 func detectWindows() (string, error) {
 	// Use WMIC to find serial ports
-	out, err := exec.Command("wmic", "path", "Win32_SerialPort", "get", "DeviceID").Output()
+	cmd := exec.Command("wmic", "path", "Win32_SerialPort", "get", "DeviceID")
+	hideWindow(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to query serial ports: %w", err)
 	}
