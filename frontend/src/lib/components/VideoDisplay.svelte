@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { startKeyboardCapture, stopKeyboardCapture, releaseAllKeys } from '../input/keyboard';
-  import { startMouseCapture, stopMouseCapture, enterCapture, exitCapture } from '../input/mouse';
+  import { startMouseCapture, stopMouseCapture, enterCapture, exitCapture, isCapturing } from '../input/mouse';
   import { connection, updateVideo } from '../stores/connection';
   import { GetStreamURL, SendText, StartVideo, StopVideo } from '../../../wailsjs/go/main/App';
   import { WindowSetTitle } from '../../../wailsjs/runtime';
@@ -126,6 +126,23 @@
     justComposed = false;
   }
 
+  function onContainerMouseEnter() {
+    // Auto-focus on hover so keyboard events are forwarded without clicking.
+    // Skip if already in full capture (pointer lock) to avoid interference.
+    if (!captured && videoContainer && !isCapturing()) {
+      imeInput?.focus();
+    }
+  }
+
+  function onContainerMouseLeave() {
+    // Blur on mouse leave to stop forwarding keyboard events.
+    // Skip if in full capture mode (pointer lock keeps mouse inside).
+    if (!captured) {
+      videoContainer?.blur();
+      imeInput?.blur();
+    }
+  }
+
   onMount(async () => {
     streamURL = await GetStreamURL();
 
@@ -151,6 +168,8 @@
   bind:this={videoContainer}
   tabindex="0"
   on:pointerdown={onContainerPointerDown}
+  on:mouseenter={onContainerMouseEnter}
+  on:mouseleave={onContainerMouseLeave}
   on:keydown={onKeyDown}
   on:contextmenu|preventDefault
   role="application"
