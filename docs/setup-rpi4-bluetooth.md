@@ -1,7 +1,9 @@
 # Bluetooth シリアル接続セットアップガイド
 
 FT232 USB-Serial（有線 UART）の代わりに Bluetooth Serial Port Profile (SPP) を使い、
-ホスト PC と RPi4 をケーブルレスで接続する手順です。
+ホスト PC と RPi をケーブルレスで接続する手順です。
+
+> **対応ハードウェア**: RPi4 / RPi5 の両方で動作確認済みです。
 
 > **既存コードの変更は不要です。**
 > Dejima KVM のシリアル実装はデバイスパスに依存しない汎用設計のため、
@@ -463,6 +465,39 @@ Bluetooth SPP の遅延は有線 UART より大きくなります（通常 10〜
 - RPi4 とホスト PC の距離を近づける（推奨 3m 以内）
 - WiFi の 2.4GHz 帯と干渉していないか確認
 - 有線 UART に戻す（`-device /dev/ttyAMA0`）
+
+### macOS で SPP が認識されない (シリアルポートが作成されない)
+
+macOS は Bluetooth の SDP (サービス発見) 結果を plist にキャッシュします。
+RPi 側で SPP が SDP に登録される**前**にペアリングした場合、「SPP なし」の状態がキャッシュされ、
+その後 SPP を登録して再ペアリングしてもシリアルポートが作成されないことがあります。
+
+この問題は特に RPi5 で初回セットアップ時に発生しやすいです（RPi5 固有の問題ではなく macOS 側のキャッシュ汚染が原因）。
+
+**解決手順**:
+
+```bash
+# 1. ペアリングを削除
+blueutil --unpair <RPi の MAC アドレス>
+
+# 2. Bluetooth plist キャッシュを完全削除
+#    ※ 他のデバイス (マウス等) のペアリングもリセットされるため、有線マウスを用意してください
+sudo rm -f /Library/Preferences/com.apple.Bluetooth.plist
+rm -f ~/Library/Preferences/ByHost/com.apple.Bluetooth.*.plist
+sudo rm -f /private/var/root/Library/Preferences/com.apple.bluetoothd.plist
+
+# 3. Bluetooth デーモンを再起動
+sudo pkill bluetoothd
+
+# 4. デバイスファイルが消えたことを確認
+ls /dev/tty.*<デバイス名>* /dev/cu.*<デバイス名>* 2>&1
+# "No such file or directory" であること (消えていなければ Mac を再起動)
+```
+
+その後、RPi 側で SPP が登録されていることを確認してから (`sudo sdptool browse local | grep -A 10 "Serial Port"`)、
+セクション 3 の手順に従ってクリーンな状態から再ペアリングしてください。
+
+> `blueutil` が未インストールの場合: `brew install blueutil`
 
 ### 有線 UART に戻したい
 
