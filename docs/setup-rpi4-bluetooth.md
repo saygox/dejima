@@ -468,20 +468,24 @@ Bluetooth SPP の遅延は有線 UART より大きくなります（通常 10〜
 
 ### macOS で SPP が認識されない (シリアルポートが作成されない)
 
-macOS は Bluetooth の SDP (サービス発見) 結果を plist にキャッシュします。
+macOS は Bluetooth の SDP (サービス発見) 結果をキャッシュします。
 RPi 側で SPP が SDP に登録される**前**にペアリングした場合、「SPP なし」の状態がキャッシュされ、
 その後 SPP を登録して再ペアリングしてもシリアルポートが作成されないことがあります。
 
 この問題は特に RPi5 で初回セットアップ時に発生しやすいです（RPi5 固有の問題ではなく macOS 側のキャッシュ汚染が原因）。
 
-**解決手順**:
+**診断**: `system_profiler SPBluetoothDataType` の Services に SPP (0x1101) が含まれているか確認してください。
+含まれていない場合、以下のクリーンアップが必要です。
+
+> **注意**: 以下の手順で他のデバイス (マウス等) のペアリングもリセットされます。有線マウスを用意してください。
+
+#### macOS Ventura 以前の場合
 
 ```bash
 # 1. ペアリングを削除
 blueutil --unpair <RPi の MAC アドレス>
 
 # 2. Bluetooth plist キャッシュを完全削除
-#    ※ 他のデバイス (マウス等) のペアリングもリセットされるため、有線マウスを用意してください
 sudo rm -f /Library/Preferences/com.apple.Bluetooth.plist
 rm -f ~/Library/Preferences/ByHost/com.apple.Bluetooth.*.plist
 sudo rm -f /private/var/root/Library/Preferences/com.apple.bluetoothd.plist
@@ -494,8 +498,68 @@ ls /dev/tty.*<デバイス名>* /dev/cu.*<デバイス名>* 2>&1
 # "No such file or directory" であること (消えていなければ Mac を再起動)
 ```
 
-その後、RPi 側で SPP が登録されていることを確認してから (`sudo sdptool browse local | grep -A 10 "Serial Port"`)、
+#### macOS Sequoia (15.x) 以降の場合
+
+macOS Sequoia では Bluetooth のペアリングデータが **plist に加えて System Keychain** にも保存されるようになりました。
+plist 削除だけではキャッシュがクリアされず、「SPP なし」の SDP 結果が Keychain に残り続けます。
+
+```bash
+# 1. ペアリングを削除
+blueutil --unpair <RPi の MAC アドレス>
+
+# 2. System Keychain から対象デバイスのエントリを削除
+#    <MAC> は RPi の MAC アドレス (例: 88:A2:9E:02:D0:6D)
+
+# Classic BT LinkKey
+sudo security delete-generic-password \
+  -s "MobileBluetooth" -a "<MAC>" \
+  /Library/Keychains/System.keychain
+
+# BLE pairing keys (Public アドレス)
+sudo security delete-generic-password \
+  -s "BluetoothLE" -a "Public <MAC>" \
+  /Library/Keychains/System.keychain
+
+# BLE pairing keys (Random アドレス — 存在しなければエラーになるだけ)
+sudo security delete-generic-password \
+  -s "BluetoothLE" -a "<MAC>" \
+  /Library/Keychains/System.keychain 2>/dev/null
+
+# 3. plist を完全削除 (従来の3ファイル + Sequoia 追加分)
+sudo rm -f /Library/Preferences/com.apple.Bluetooth.plist
+rm -f ~/Library/Preferences/ByHost/com.apple.Bluetooth.*.plist
+sudo rm -f /private/var/root/Library/Preferences/com.apple.bluetoothd.plist
+sudo rm -f /private/var/root/Library/Preferences/com.apple.Bluetooth.plist
+rm -f ~/Library/Preferences/com.apple.bluetoothuserd.plist
+
+# 4. cfprefsd のキャッシュをフラッシュ + bluetoothd 再起動
+sudo pkill -HUP cfprefsd
+sudo pkill bluetoothd
+
+# 5. デバイスファイルが消えたことを確認
+ls /dev/tty.*<デバイス名>* /dev/cu.*<デバイス名>* 2>&1
+# "No such file or directory" であること (消えていなければ Mac を再起動)
+```
+
+#### クリーンアップ後の再ペアリング
+
+RPi 側で SPP が登録されていることを確認してから再ペアリングしてください:
+
+```bash
+# RPi 側で確認
+sudo sdptool browse local | grep -A 10 "Serial Port"
+# Serial Port が 1 件表示されること
+```
+
 セクション 3 の手順に従ってクリーンな状態から再ペアリングしてください。
+
+再ペアリング後に確認:
+
+```bash
+# macOS 側
+system_profiler SPBluetoothDataType | grep -A 15 "<デバイス名>"
+# Services に SPP (0x1101) が含まれていれば成功
+```
 
 > `blueutil` が未インストールの場合: `brew install blueutil`
 

@@ -73,9 +73,12 @@ func Decode(payload []byte) (Message, error) {
 		}, nil
 
 	case MsgClipboardData:
+		if len(data) < 1 {
+			return Message{}, fmt.Errorf("CLIPBOARD_DATA expects at least 1 byte (flags), got %d", len(data))
+		}
 		return Message{
 			Type:    MsgClipboardData,
-			Payload: ClipboardDataEvent{Text: string(data)},
+			Payload: ClipboardDataEvent{Text: string(data[1:]), Final: data[0] == 0x01},
 		}, nil
 
 	case MsgDiagData:
@@ -85,9 +88,12 @@ func Decode(payload []byte) (Message, error) {
 		}, nil
 
 	case MsgClipboardNotify:
+		if len(data) < 1 {
+			return Message{}, fmt.Errorf("CLIPBOARD_NOTIFY expects at least 1 byte (flags), got %d", len(data))
+		}
 		return Message{
 			Type:    MsgClipboardNotify,
-			Payload: ClipboardNotifyEvent{Text: string(data)},
+			Payload: ClipboardNotifyEvent{Text: string(data[1:]), Final: data[0] == 0x01},
 		}, nil
 
 	case MsgACK:

@@ -184,21 +184,39 @@ func EncodeDiagData(text string) []byte {
 	return buf
 }
 
+// Clipboard chunk flags
+const (
+	ClipFlagMore  byte = 0x00 // more chunks follow
+	ClipFlagFinal byte = 0x01 // last (or only) chunk
+)
+
 // EncodeClipboardNotify creates a CLIPBOARD_NOTIFY payload (unsolicited clipboard change).
-func EncodeClipboardNotify(text string) []byte {
+// final=true indicates this is the last (or only) chunk.
+func EncodeClipboardNotify(text string, final bool) []byte {
 	data := []byte(text)
-	buf := make([]byte, 1+len(data))
+	buf := make([]byte, 2+len(data))
 	buf[0] = MsgClipboardNotify
-	copy(buf[1:], data)
+	if final {
+		buf[1] = ClipFlagFinal
+	} else {
+		buf[1] = ClipFlagMore
+	}
+	copy(buf[2:], data)
 	return buf
 }
 
 // EncodeClipboardData creates a CLIPBOARD_DATA response payload.
-func EncodeClipboardData(text string) []byte {
+// final=true indicates this is the last (or only) chunk.
+func EncodeClipboardData(text string, final bool) []byte {
 	data := []byte(text)
-	buf := make([]byte, 1+len(data))
+	buf := make([]byte, 2+len(data))
 	buf[0] = MsgClipboardData
-	copy(buf[1:], data)
+	if final {
+		buf[1] = ClipFlagFinal
+	} else {
+		buf[1] = ClipFlagMore
+	}
+	copy(buf[2:], data)
 	return buf
 }
 

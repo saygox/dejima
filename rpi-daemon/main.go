@@ -127,11 +127,7 @@ func clipboardMonitor(port *uart.Port, inj *injector.Injector, stop <-chan struc
 			}
 			log.Printf("clipboard monitor: change detected, len=%d text=%q", len(text), truncated)
 			lastContent = text
-			// Truncate to fit in serial frame
-			if len(text) > 200 {
-				text = text[:200]
-			}
-			if err := port.WriteFrame(protocol.EncodeClipboardNotify(text)); err != nil {
+			if err := sendClipboardChunked(port, text, protocol.EncodeClipboardNotify); err != nil {
 				log.Printf("clipboard notify send error: %v", err)
 			}
 		}
@@ -220,12 +216,8 @@ func handleMessage(port *uart.Port, inj *injector.Injector, msg protocol.Message
 				sendACK(port, protocol.ACKError)
 				return
 			}
-			// Truncate to fit in serial frame (max ~200 bytes for safety)
-			if len(text) > 200 {
-				text = text[:200]
-			}
 			log.Printf("clipboard response: %d bytes", len(text))
-			if err := port.WriteFrame(protocol.EncodeClipboardData(text)); err != nil {
+			if err := sendClipboardChunked(port, text, protocol.EncodeClipboardData); err != nil {
 				log.Printf("clipboard send error: %v", err)
 			}
 			return
@@ -234,6 +226,39 @@ func handleMessage(port *uart.Port, inj *injector.Injector, msg protocol.Message
 			_ = port.WriteFrame(protocol.EncodePing())
 		}
 	}
+}
+
+// sendClipboardChunked sends clipboard text in 199-byte UTF-8-safe chunks.
+// encodeFn is either protocol.EncodeClipboardData or protocol.EncodeClipboardNotify.
+func sendClipboardChunked(port *uart.Port, text string, encodeFn func(string, bool) []byte) error {
+	const maxChunk = 199 // 1 byte msgType + 1 byte flags + up to 199 bytes text
+	data := []byte(text)
+
+	if len(data) == 0 {
+		return port.WriteFrame(encodeFn("", true))
+	}
+
+	for len(data) > 0 {
+		end := maxChunk
+		if end > len(data) {
+			end = len(data)
+		}
+		// Don't split in the middle of a UTF-8 character
+		for end > 0 && end < len(data) && (data[end]&0xC0) == 0x80 {
+			end--
+		}
+		if end == 0 {
+			end = maxChunk
+		}
+		chunk := string(data[:end])
+		data = data[end:]
+		final := len(data) == 0
+
+		if err := port.WriteFrame(encodeFn(chunk, final)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func sendACK(port *uart.Port, status byte) {

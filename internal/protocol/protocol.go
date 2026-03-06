@@ -79,12 +79,14 @@ type TextInputEvent struct {
 
 // ClipboardDataEvent carries clipboard text from RPi to host (response to ClipboardReq).
 type ClipboardDataEvent struct {
-	Text string
+	Text  string
+	Final bool // true = last (or only) chunk
 }
 
 // ClipboardNotifyEvent is an unsolicited notification that the RPi clipboard changed.
 type ClipboardNotifyEvent struct {
-	Text string
+	Text  string
+	Final bool // true = last (or only) chunk
 }
 
 // DiagDataEvent carries diagnostic text from RPi to host.

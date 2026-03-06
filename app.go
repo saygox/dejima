@@ -554,10 +554,6 @@ func (a *App) ResolveClipboardForPaste() string {
 func (a *App) MarkSentToRemote(text string) {
 	a.clipMu.Lock()
 	defer a.clipMu.Unlock()
-	// Truncate to match what RPi will send back (max 200 bytes)
-	if len(text) > 200 {
-		text = text[:200]
-	}
 	a.lastSentToRemote = text
 	a.lastRemoteClip = text // remote now has this content too
 }

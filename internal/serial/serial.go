@@ -21,6 +21,10 @@ type Port struct {
 	name   string
 	stopCh chan struct{}
 
+	// Chunk accumulation buffers for multi-frame clipboard messages
+	clipDataBuf   []byte
+	clipNotifyBuf []byte
+
 	// IncomingClipboard receives clipboard data sent from RPi (response to ClipboardReq).
 	IncomingClipboard chan string
 	// IncomingClipNotify receives unsolicited clipboard change notifications from RPi.
@@ -112,26 +116,35 @@ func (p *Port) readLoop() {
 
 		switch ev := msg.Payload.(type) {
 		case protocol.ClipboardDataEvent:
-			// Non-blocking send to channel
-			select {
-			case p.IncomingClipboard <- ev.Text:
-			default:
-				// Channel full, drop old and replace
+			p.clipDataBuf = append(p.clipDataBuf, []byte(ev.Text)...)
+			if ev.Final {
+				text := string(p.clipDataBuf)
+				p.clipDataBuf = nil
+				// Non-blocking send to channel
 				select {
-				case <-p.IncomingClipboard:
+				case p.IncomingClipboard <- text:
 				default:
+					select {
+					case <-p.IncomingClipboard:
+					default:
+					}
+					p.IncomingClipboard <- text
 				}
-				p.IncomingClipboard <- ev.Text
 			}
 		case protocol.ClipboardNotifyEvent:
-			select {
-			case p.IncomingClipNotify <- ev.Text:
-			default:
+			p.clipNotifyBuf = append(p.clipNotifyBuf, []byte(ev.Text)...)
+			if ev.Final {
+				text := string(p.clipNotifyBuf)
+				p.clipNotifyBuf = nil
 				select {
-				case <-p.IncomingClipNotify:
+				case p.IncomingClipNotify <- text:
 				default:
+					select {
+					case <-p.IncomingClipNotify:
+					default:
+					}
+					p.IncomingClipNotify <- text
 				}
-				p.IncomingClipNotify <- ev.Text
 			}
 		case protocol.DiagDataEvent:
 			select {
