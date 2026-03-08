@@ -253,12 +253,30 @@ func (a *App) startAudio() error {
 	vol := float64(a.cfg.AudioVolume) / 100.0
 	p.SetVolume(vol)
 	p.SetMuted(a.cfg.AudioMuted)
-	if err := p.Start(audio.PipelineConfig{
+
+	cfg := audio.PipelineConfig{
 		DeviceID:   a.cfg.AudioDeviceID,
 		SampleRate: a.cfg.AudioSampleRate,
-	}); err != nil {
+	}
+
+	if err := p.Start(cfg); err != nil {
 		return fmt.Errorf("audio: %w", err)
 	}
+
+	// Wait briefly to detect early exit (e.g. device open failure)
+	time.Sleep(2 * time.Second)
+
+	if !p.IsRunning() && cfg.DeviceID != "" {
+		log.Printf("audio: saved device %q failed, retrying with default device", cfg.DeviceID)
+		p = audio.NewPipeline()
+		p.SetVolume(vol)
+		p.SetMuted(a.cfg.AudioMuted)
+		cfg.DeviceID = ""
+		if err := p.Start(cfg); err != nil {
+			return fmt.Errorf("audio fallback: %w", err)
+		}
+	}
+
 	a.audioPipe = p
 	return nil
 }
