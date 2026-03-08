@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"go.bug.st/serial"
 
@@ -33,6 +34,9 @@ type Port struct {
 	// IncomingDiag receives diagnostic data chunks from RPi.
 	// Empty string signals end of diagnostic output.
 	IncomingDiag chan string
+
+	// pongCh receives a signal when a PingEvent (pong) arrives from RPi.
+	pongCh chan struct{}
 }
 
 // Open opens a serial port with the given name and baud rate.
@@ -49,6 +53,12 @@ func Open(portName string, baudRate int) (*Port, error) {
 		return nil, fmt.Errorf("opening serial port %s: %w", portName, err)
 	}
 
+	// Set read timeout so ReadFrame doesn't block forever when RPi is not responding.
+	if err := p.SetReadTimeout(100 * time.Millisecond); err != nil {
+		p.Close()
+		return nil, fmt.Errorf("setting read timeout on %s: %w", portName, err)
+	}
+
 	log.Printf("serial: opened %s at %d baud", portName, baudRate)
 
 	port := &Port{
@@ -58,6 +68,7 @@ func Open(portName string, baudRate int) (*Port, error) {
 		IncomingClipboard:  make(chan string, 1),
 		IncomingClipNotify: make(chan string, 1),
 		IncomingDiag:       make(chan string, 16),
+		pongCh:             make(chan struct{}, 1),
 	}
 
 	port.wg.Add(1)
@@ -160,9 +171,34 @@ func (p *Port) readLoop() {
 			if ev.Status != 0 {
 				log.Printf("serial: RPi returned ACK error")
 			}
+		case protocol.PingEvent:
+			select {
+			case p.pongCh <- struct{}{}:
+			default:
+			}
 		default:
 			log.Printf("serial: unexpected message type 0x%02x", msg.Type)
 		}
+	}
+}
+
+// Ping sends a ping frame and waits for a pong response from the RPi daemon.
+func (p *Port) Ping(timeout time.Duration) error {
+	payload, err := protocol.Encode(protocol.Message{Type: protocol.MsgPing, Payload: protocol.PingEvent{}})
+	if err != nil {
+		return fmt.Errorf("encoding ping: %w", err)
+	}
+	if err := p.Write(payload); err != nil {
+		return fmt.Errorf("sending ping: %w", err)
+	}
+
+	select {
+	case <-p.pongCh:
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("ping timeout after %v", timeout)
+	case <-p.stopCh:
+		return fmt.Errorf("port closed")
 	}
 }
 

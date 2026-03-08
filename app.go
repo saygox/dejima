@@ -305,6 +305,12 @@ func (a *App) ConnectSerial(portName string) error {
 		return err
 	}
 
+	// Verify the RPi daemon is actually responding before declaring success.
+	if err := port.Ping(2 * time.Second); err != nil {
+		port.Close()
+		return fmt.Errorf("device not responding on %s: %w", portName, err)
+	}
+
 	a.serialMu.Lock()
 	a.serialPort = port
 	a.clipNotifyStopCh = make(chan struct{})
