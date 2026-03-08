@@ -298,18 +298,22 @@ func (a *App) DetectFT232() (string, error) {
 
 // ConnectSerial opens the given serial port.
 func (a *App) ConnectSerial(portName string) error {
+	log.Printf("serial: ConnectSerial(%s) called", portName)
 	a.disconnectSerialLocked()
 
 	port, err := serial.Open(portName, a.cfg.BaudRate)
 	if err != nil {
+		log.Printf("serial: Open failed: %v", err)
 		return err
 	}
 
 	// Verify the RPi daemon is actually responding before declaring success.
 	if err := port.Ping(2 * time.Second); err != nil {
+		log.Printf("serial: Ping failed, closing port: %v", err)
 		port.Close()
 		return fmt.Errorf("device not responding on %s: %w", portName, err)
 	}
+	log.Printf("serial: Ping OK, connection established")
 
 	a.serialMu.Lock()
 	a.serialPort = port

@@ -188,8 +188,23 @@ func (p *Port) Ping(timeout time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("encoding ping: %w", err)
 	}
-	if err := p.Write(payload); err != nil {
-		return fmt.Errorf("sending ping: %w", err)
+
+	// Write can block indefinitely if the remote side isn't draining the UART,
+	// so run it in a goroutine with the same timeout.
+	writeDone := make(chan error, 1)
+	go func() {
+		writeDone <- p.Write(payload)
+	}()
+
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			return fmt.Errorf("sending ping: %w", err)
+		}
+	case <-time.After(timeout):
+		return fmt.Errorf("ping write timeout after %v", timeout)
+	case <-p.stopCh:
+		return fmt.Errorf("port closed")
 	}
 
 	select {
@@ -206,11 +221,18 @@ func (p *Port) Ping(timeout time.Duration) error {
 func (p *Port) Close() error {
 	close(p.stopCh)
 
-	// Close the port first to unblock any blocking Read in readLoop.
-	// readLoop will get a read error and exit.
-	p.mu.Lock()
+	// Abort any pending write/read operations at the OS level.
+	// On Windows this calls PurgeComm with PURGE_TXABORT which unblocks
+	// a goroutine stuck in a blocking WriteFile/GetOverlappedResult.
+	_ = p.port.ResetOutputBuffer()
+	_ = p.port.ResetInputBuffer()
+
 	log.Printf("serial: closing %s", p.name)
 	err := p.port.Close()
+
+	// Acquire the lock briefly so that any Write goroutine that just
+	// woke up from the aborted write can release it cleanly.
+	p.mu.Lock()
 	p.mu.Unlock()
 
 	// Wait for readLoop to finish so the goroutine doesn't outlive Close.

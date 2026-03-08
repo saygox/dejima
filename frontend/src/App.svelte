@@ -7,7 +7,7 @@
   import TitleBar from './lib/components/TitleBar.svelte';
   import AVSettingsModal from './lib/components/AVSettingsModal.svelte';
   import SerialSettingsModal from './lib/components/SerialSettingsModal.svelte';
-  import { GetConfig, ListVideoDevices, StartVideo, ListSerialPorts, ConnectSerial, SendText, SendKeyEvent, GetRemoteClipboard, GetRemoteDiag, GetVideoDiag, WriteRemoteClipToHost, TestClipboardPipeline } from '../wailsjs/go/main/App';
+  import { GetConfig, ListVideoDevices, StartVideo, ListSerialPorts, ConnectSerial, GetSerialStatus, SendText, SendKeyEvent, GetRemoteClipboard, GetRemoteDiag, GetVideoDiag, WriteRemoteClipToHost, TestClipboardPipeline } from '../wailsjs/go/main/App';
   import { updateVideo, updateVideoDevice, updateSerial } from './lib/stores/connection';
   import { isFullscreen, platform, isWindows } from './lib/stores/fullscreen';
 
@@ -212,8 +212,12 @@
       } catch (e) { console.error('Auto-start video:', e); }
     }
 
-    // Serial: match saved port against available ports, auto-connect if found
-    if (cfg.serial_port) {
+    // Serial: sync UI with backend state, then auto-connect if needed
+    const alreadyConnected = await GetSerialStatus();
+    if (alreadyConnected) {
+      // Backend already has the port open (e.g. after frontend hot-reload)
+      updateSerial(alreadyConnected);
+    } else if (cfg.serial_port) {
       const ports = await ListSerialPorts() || [];
       if (ports.includes(cfg.serial_port)) {
         try {
