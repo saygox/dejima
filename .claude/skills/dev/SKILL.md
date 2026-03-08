@@ -9,10 +9,14 @@ Cleanly restart the development environment by killing stale processes first.
 
 ## Steps
 
-1. Kill any existing dejima / GStreamer processes (ignore errors if none found):
+1. Kill any existing dejima / wails / GStreamer processes (ignore errors if none found). Kill child processes first, then wails itself:
 
 ```bash
-wmic process where "ExecutablePath like '%dejima%'" get ProcessId 2>/dev/null | grep -o '[0-9]*' | xargs -r -I{} taskkill //F //PID {} //T 2>/dev/null; taskkill //F //IM "gst-launch-1.0.exe" 2>/dev/null; rm -f "$APPDATA/dejima/app.lock"; sleep 2
+powershell -Command "Get-Process -Name 'dejima-kvm-dev' -ErrorAction SilentlyContinue | Stop-Process -Force"
+powershell -Command "Get-Process -Name 'wails' -ErrorAction SilentlyContinue | Stop-Process -Force"
+taskkill //F //IM "gst-launch-1.0.exe" 2>/dev/null
+rm -f "$APPDATA/dejima/app.lock"
+sleep 2
 ```
 
 2. Start `wails dev` in the background from the project root:
