@@ -1,0 +1,21 @@
+[Unit]
+Description=Dejima RFCOMM Watch
+After=bluetooth.target
+Requires=bluetooth.target
+
+[Service]
+Type=simple
+# Hints for display detection (auto-detected at runtime, these are fallback defaults)
+# Wayland (Raspberry Pi OS Bookworm+)
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+# X11 fallback (older Raspberry Pi OS)
+Environment=DISPLAY=:0
+ExecStartPre=/usr/bin/sdptool add SP
+ExecStart=/usr/bin/rfcomm watch /dev/rfcomm0 1 /usr/local/bin/dejima-kvm-daemon-rpi -device /dev/rfcomm0 -baud 115200
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

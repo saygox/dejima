@@ -113,6 +113,32 @@ sudo bluetoothctl
 exit
 ```
 
+### BlueZ 互換モードの有効化 (必須)
+
+BlueZ 5 ではデフォルトで SDP が無効になっています。
+SPP を使うには `--compat` フラグが**必須**です。これがないと `sdptool` が失敗するだけでなく、
+ペアリング後の rfcomm 接続も即切断されます。
+
+```bash
+sudo nano /lib/systemd/system/bluetooth.service
+```
+
+`ExecStart` の行に `--compat` フラグを追加:
+
+```ini
+ExecStart=/usr/libexec/bluetooth/bluetoothd --compat
+```
+
+> パスは環境により `/usr/lib/bluetooth/bluetoothd` の場合もあります。
+> `which bluetoothd` で確認してください。
+
+反映:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart bluetooth
+```
+
 ### SPP (Serial Port Profile) の有効化
 
 Bluetooth SDP に Serial Port サービスを登録します。
@@ -122,34 +148,7 @@ sudo sdptool add SP
 ```
 
 > `sdptool` が見つからない場合は `sudo apt install bluez` でインストールしてください。
-
-#### sdptool が「Failed」になる場合
-
-BlueZ 5 ではデフォルトで SDP が無効になっています。以下で有効にします:
-
-```bash
-sudo nano /etc/systemd/system/bluetooth.target.wants/bluetooth.service
-```
-
-もしくは:
-
-```bash
-sudo nano /lib/systemd/system/bluetooth.service
-```
-
-`ExecStart` の行に `--compat` フラグを追加:
-
-```ini
-ExecStart=/usr/lib/bluetooth/bluetoothd --compat
-```
-
-反映:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart bluetooth
-sudo sdptool add SP    # 再実行
-```
+> `--compat` が有効でないと `sdptool` は失敗します（上記セクション参照）。
 
 ### rfcomm 待ち受けの確認 (手動テスト)
 
@@ -215,72 +214,33 @@ Dejima KVM アプリの設定画面でこの COM ポートを選択してくだ�
 
 ## 4. RPi4 側: systemd サービスの設定
 
-### rfcomm 待ち受けサービスの作成
+### rfcomm watch サービスの作成
 
-Bluetooth 接続を自動で受け付けるサービスを作成します。
-
-```bash
-sudo nano /etc/systemd/system/dejima-rfcomm.service
-```
-
-内容:
-
-```ini
-[Unit]
-Description=Dejima RFCOMM Listen
-After=bluetooth.target
-Requires=bluetooth.target
-
-[Service]
-Type=simple
-ExecStartPre=/usr/bin/sdptool add SP
-ExecStart=/usr/bin/rfcomm listen /dev/rfcomm0 1
-Restart=always
-RestartSec=3
-User=root
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### dejima-kvm-rpi.service の変更
-
-デバイスを `/dev/rfcomm0` に変更し、rfcomm サービスへの依存を追加します。
+`rfcomm watch` を使い、Bluetooth 接続の待ち受けとデーモン起動を 1 つのサービスで管理します。
+`rfcomm listen` ではなく `rfcomm watch` を使う理由は、`listen` だとデーモンと `/dev/rfcomm0` が競合して即切断される問題があるためです。
+`watch` は接続が来たら指定コマンド（デーモン）を起動し、切断後に自動で再待ち受けします。
 
 ```bash
-sudo nano /etc/systemd/system/dejima-kvm-rpi.service
+sudo cp dejima-rfcomm.service /etc/systemd/system/
 ```
 
-変更後の内容:
+> サービスファイルはリポジトリの `rpi-daemon/dejima-rfcomm.service` にあります。
+> `dejima-kvm-rpi.service` は不要です（`rfcomm watch` がデーモンのライフサイクルを管理します）。
+> 既に有線 UART 用の `dejima-kvm-rpi.service` が有効な場合は無効化してください:
+> ```bash
+> sudo systemctl disable --now dejima-kvm-rpi
+> ```
 
-```ini
-[Unit]
-Description=Dejima KVM HID Daemon (RPi)
-After=graphical.target dejima-rfcomm.service
-Requires=dejima-rfcomm.service
+### ホスト PC を信頼済みデバイスに設定
 
-[Service]
-Type=simple
-Environment=WAYLAND_DISPLAY=wayland-0
-Environment=XDG_RUNTIME_DIR=/run/user/1000
-Environment=DISPLAY=:0
-ExecStart=/usr/local/bin/dejima-kvm-daemon-rpi -device /dev/rfcomm0 -baud 115200
-Restart=always
-RestartSec=3
-User=root
-
-[Install]
-WantedBy=graphical.target
-```
-
-> 有線 UART 版との違いは `-device /dev/rfcomm0` と `After`/`Requires` の依存関係のみです。
+rfcomm 接続を受け入れるには、ホスト PC が信頼済みである必要があります（セクション 6 参照）。
+信頼設定がないと接続が拒否されます。
 
 ### サービスの有効化・起動
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now dejima-rfcomm
-sudo systemctl enable --now dejima-kvm-rpi
 ```
 
 ---
