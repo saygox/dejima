@@ -123,11 +123,15 @@ SPP を使うには `--compat` フラグが**必須**です。これがないと
 sudo nano /lib/systemd/system/bluetooth.service
 ```
 
-`ExecStart` の行に `--compat` フラグを追加:
+`ExecStart` の行に `--compat` フラグと `--noplugin` オプションを追加:
 
 ```ini
-ExecStart=/usr/libexec/bluetooth/bluetoothd --compat
+ExecStart=/usr/libexec/bluetooth/bluetoothd --compat --noplugin=sap,a2dp,avrcp,bap,bass,csip,mcp,micp,vcp,midi
 ```
+
+> `--noplugin` で BlueZ のオーディオ系・MIDI プラグインを無効化しています。
+> SPP のみ使用する Dejima KVM では不要なプロファイルであり、
+> Windows 側でオーディオデバイスとして誤認識される干渉を防ぎます。
 
 > パスは環境により `/usr/lib/bluetooth/bluetoothd` の場合もあります。
 > `which bluetoothd` で確認してください。
@@ -138,6 +142,26 @@ ExecStart=/usr/libexec/bluetooth/bluetoothd --compat
 sudo systemctl daemon-reload
 sudo systemctl restart bluetooth
 ```
+
+### WirePlumber の Bluetooth 無効化 (推奨)
+
+RPi にデスクトップ環境がインストールされている場合、WirePlumber (PipeWire のセッションマネージャ) が
+Bluetooth の HFP/A2DP プロファイルを D-Bus 経由で登録します。
+BlueZ の `--noplugin` だけでは防げないため、WirePlumber 側でも無効化します:
+
+```bash
+mkdir -p ~/.config/wireplumber/wireplumber.conf.d
+cat > ~/.config/wireplumber/wireplumber.conf.d/51-disable-bluetooth.conf << 'EOF'
+wireplumber.profiles = {
+  main = {
+    hardware.bluetooth = disabled
+  }
+}
+EOF
+systemctl --user restart wireplumber
+```
+
+> CUI のみの環境では WirePlumber は動作していないため、このステップは不要です。
 
 ### SPP (Serial Port Profile) の有効化
 
