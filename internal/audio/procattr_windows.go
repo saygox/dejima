@@ -26,9 +26,20 @@ func killProcess(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Try taskkill /T first to kill process tree
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	kill := exec.CommandContext(ctx, "taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid))
 	kill.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
-	return kill.Run()
+	if err := kill.Run(); err != nil {
+		// Fallback: kill the process directly
+		_ = cmd.Process.Kill()
+	}
+	return nil
+}
+
+// waitDeviceRelease waits briefly for Windows to release device handles
+// after a GStreamer process has been reaped.
+func waitDeviceRelease() {
+	time.Sleep(500 * time.Millisecond)
 }

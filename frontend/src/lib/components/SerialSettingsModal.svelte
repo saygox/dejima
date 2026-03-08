@@ -52,9 +52,13 @@
   }
 
   async function disconnect() {
-    await DisconnectSerial();
-    connectedPort = '';
-    updateSerial('');
+    try {
+      await DisconnectSerial();
+      connectedPort = '';
+      updateSerial('');
+    } catch (e) {
+      error = `Serial切断に失敗しました: ${e}`;
+    }
   }
 
   function close() {

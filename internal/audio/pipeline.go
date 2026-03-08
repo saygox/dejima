@@ -31,6 +31,7 @@ type Pipeline struct {
 	running      bool
 	cmd          *exec.Cmd
 	stopCh       chan struct{}
+	exitWg       sync.WaitGroup
 	stderrBuf    bytes.Buffer
 	cmdLine      string
 	exitErr      string
@@ -125,6 +126,7 @@ func (p *Pipeline) Start(cfg PipelineConfig) error {
 	p.running = true
 	p.stopCh = make(chan struct{})
 
+	p.exitWg.Add(1)
 	go p.waitForExit()
 
 	log.Printf("audio: pipeline started (device-id=%q, volume=%.2f)", cfg.DeviceID, vol)
@@ -134,9 +136,9 @@ func (p *Pipeline) Start(cfg PipelineConfig) error {
 // Stop terminates the audio pipeline.
 func (p *Pipeline) Stop() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	if !p.running {
+		p.mu.Unlock()
 		return
 	}
 
@@ -152,6 +154,10 @@ func (p *Pipeline) Stop() {
 	}
 
 	p.running = false
+	p.mu.Unlock()
+
+	p.exitWg.Wait() // wait for gst-launch to fully exit and release devices
+	waitDeviceRelease()
 	log.Printf("audio: pipeline stopped")
 }
 
@@ -183,6 +189,7 @@ func (p *Pipeline) scheduleRestart() {
 }
 
 func (p *Pipeline) waitForExit() {
+	defer p.exitWg.Done()
 	exitErr := p.cmd.Wait()
 	p.mu.Lock()
 	p.running = false

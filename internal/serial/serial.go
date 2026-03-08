@@ -20,6 +20,7 @@ type Port struct {
 	mu     sync.Mutex
 	name   string
 	stopCh chan struct{}
+	wg     sync.WaitGroup
 
 	// Chunk accumulation buffers for multi-frame clipboard messages
 	clipDataBuf   []byte
@@ -59,6 +60,7 @@ func Open(portName string, baudRate int) (*Port, error) {
 		IncomingDiag:       make(chan string, 16),
 	}
 
+	port.wg.Add(1)
 	go port.readLoop()
 
 	return port, nil
@@ -90,6 +92,7 @@ func (p *Port) Write(payload []byte) error {
 
 // readLoop reads framed messages from the serial port and dispatches them.
 func (p *Port) readLoop() {
+	defer p.wg.Done()
 	for {
 		select {
 		case <-p.stopCh:
@@ -167,11 +170,16 @@ func (p *Port) readLoop() {
 func (p *Port) Close() error {
 	close(p.stopCh)
 
+	// Close the port first to unblock any blocking Read in readLoop.
+	// readLoop will get a read error and exit.
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	log.Printf("serial: closing %s", p.name)
-	return p.port.Close()
+	err := p.port.Close()
+	p.mu.Unlock()
+
+	// Wait for readLoop to finish so the goroutine doesn't outlive Close.
+	p.wg.Wait()
+	return err
 }
 
 // ListPorts returns a list of available serial port names.

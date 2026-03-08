@@ -27,6 +27,7 @@ type App struct {
 	audioPipe  *audio.Pipeline
 	audioWg    sync.WaitGroup // tracks async startAudio goroutine
 	hid        *hid.Controller
+	serialMu   sync.Mutex // protects serialPort and clipNotifyStopCh
 	serialPort *serial.Port
 	streamAddr string // "http://localhost:<port>" for MJPEG stream
 
@@ -110,15 +111,25 @@ func (a *App) StartVideo() error {
 		return nil
 	}
 
-	a.pipeline = video.NewPipeline(a.store, video.PipelineConfig{
-		DeviceIndex: a.cfg.DeviceIndex,
-		DevicePath:  a.cfg.DevicePath,
-		Width:       a.cfg.CaptureWidth,
-		Height:      a.cfg.CaptureHeight,
-		Quality:     a.cfg.JpegQuality,
-	})
-	if err := a.pipeline.Start(); err != nil {
-		return err
+	var startErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		a.pipeline = video.NewPipeline(a.store, video.PipelineConfig{
+			DeviceIndex: a.cfg.DeviceIndex,
+			DevicePath:  a.cfg.DevicePath,
+			Width:       a.cfg.CaptureWidth,
+			Height:      a.cfg.CaptureHeight,
+			Quality:     a.cfg.JpegQuality,
+		})
+		if startErr = a.pipeline.Start(); startErr == nil {
+			break
+		}
+		log.Printf("StartVideo: attempt %d failed: %v", attempt+1, startErr)
+		if attempt < 2 {
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+	if startErr != nil {
+		return startErr
 	}
 
 	// Start audio (best-effort, async so oto init doesn't block the UI)
@@ -287,19 +298,23 @@ func (a *App) DetectFT232() (string, error) {
 
 // ConnectSerial opens the given serial port.
 func (a *App) ConnectSerial(portName string) error {
-	a.DisconnectSerial()
+	a.disconnectSerialLocked()
 
 	port, err := serial.Open(portName, a.cfg.BaudRate)
 	if err != nil {
 		return err
 	}
 
+	a.serialMu.Lock()
 	a.serialPort = port
+	a.clipNotifyStopCh = make(chan struct{})
+	stopCh := a.clipNotifyStopCh
+	a.serialMu.Unlock()
+
 	a.hid.SetPort(port)
 
 	// Start listening for remote clipboard notifications
-	a.clipNotifyStopCh = make(chan struct{})
-	go a.remoteClipNotifyListener(port, a.clipNotifyStopCh)
+	go a.remoteClipNotifyListener(port, stopCh)
 
 	a.cfg.SerialPort = portName
 	_ = a.cfg.Save()
@@ -309,14 +324,23 @@ func (a *App) ConnectSerial(portName string) error {
 
 // DisconnectSerial closes the current serial connection.
 func (a *App) DisconnectSerial() {
-	if a.serialPort != nil {
-		if a.clipNotifyStopCh != nil {
-			close(a.clipNotifyStopCh)
-			a.clipNotifyStopCh = nil
+	a.disconnectSerialLocked()
+}
+
+func (a *App) disconnectSerialLocked() {
+	a.serialMu.Lock()
+	port := a.serialPort
+	stopCh := a.clipNotifyStopCh
+	a.serialPort = nil
+	a.clipNotifyStopCh = nil
+	a.serialMu.Unlock()
+
+	if port != nil {
+		if stopCh != nil {
+			close(stopCh)
 		}
 		a.hid.SetPort(nil)
-		_ = a.serialPort.Close()
-		a.serialPort = nil
+		_ = port.Close()
 
 		// Reset remote clipboard so host-paste is preferred
 		a.clipMu.Lock()
@@ -327,6 +351,8 @@ func (a *App) DisconnectSerial() {
 
 // GetSerialStatus returns the connected serial port name, or empty string.
 func (a *App) GetSerialStatus() string {
+	a.serialMu.Lock()
+	defer a.serialMu.Unlock()
 	if a.serialPort != nil {
 		return a.serialPort.Name()
 	}

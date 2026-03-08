@@ -127,8 +127,13 @@
 
   async function onSerialDblClick() {
     if ($connection.serialConnected) {
-      await DisconnectSerial();
-      updateSerial('');
+      try {
+        await DisconnectSerial();
+        updateSerial('');
+      } catch (e) {
+        console.error('[StatusBar] DisconnectSerial failed:', e);
+        showError('Serial切断に失敗しました。再試行してください');
+      }
     } else {
       try {
         const cfg = await GetConfig();

@@ -14,3 +14,6 @@ func killProcess(cmd *exec.Cmd) error {
 	}
 	return cmd.Process.Kill()
 }
+
+// waitDeviceRelease is a no-op on non-Windows platforms.
+func waitDeviceRelease() {}

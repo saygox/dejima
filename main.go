@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"log"
 	"os"
+	"os/signal"
 	goruntime "runtime"
+	"syscall"
 
 	"github.com/saygox/dejima/internal/lock"
 	"github.com/saygox/dejima/internal/procgroup"
@@ -89,6 +92,17 @@ func main() {
 	_ = procgroup.Init()
 
 	app := NewApp()
+
+	// Catch SIGINT/SIGTERM to clean up serial port before exit.
+	// Wails' OnShutdown is not called on crash or taskkill /F.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		log.Printf("signal received, shutting down...")
+		app.shutdown(context.Background())
+		os.Exit(0)
+	}()
 
 	err = wails.Run(&options.App{
 		Title:     "Dejima",

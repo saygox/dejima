@@ -158,6 +158,7 @@ type Pipeline struct {
 	mu         sync.Mutex
 	running    bool
 	stopCh     chan struct{}
+	exitWg     sync.WaitGroup
 	stderrBuf  bytes.Buffer
 	frameCount uint64 // atomic
 	cmdLine    string
@@ -212,6 +213,7 @@ func (p *Pipeline) Start() error {
 	p.running = true
 	p.stopCh = make(chan struct{})
 
+	p.exitWg.Add(1)
 	go p.readFrames(stdout)
 	go p.waitForExit()
 	go p.startupHealthCheck(10 * time.Second)
@@ -341,6 +343,7 @@ func (p *Pipeline) startupHealthCheck(timeout time.Duration) {
 }
 
 func (p *Pipeline) waitForExit() {
+	defer p.exitWg.Done()
 	var exitErr error
 	if p.cmd != nil {
 		exitErr = p.cmd.Wait()
@@ -361,9 +364,9 @@ func (p *Pipeline) waitForExit() {
 // Stop terminates the GStreamer pipeline.
 func (p *Pipeline) Stop() error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	if !p.running {
+		p.mu.Unlock()
 		return nil
 	}
 
@@ -381,6 +384,10 @@ func (p *Pipeline) Stop() error {
 	}
 
 	p.running = false
+	p.mu.Unlock()
+
+	p.exitWg.Wait() // wait for gst-launch to fully exit and release devices
+	waitDeviceRelease()
 	log.Printf("gstreamer: pipeline stopped")
 	return nil
 }
