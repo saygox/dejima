@@ -148,6 +148,7 @@ type PipelineConfig struct {
 	Width       int    // 0 = auto
 	Height      int    // 0 = auto
 	Quality     int    // JPEG quality (1-100)
+	Passthrough bool   // true = MJPEG passthrough (no decode/encode)
 }
 
 // Pipeline manages a GStreamer subprocess that produces JPEG frames.
@@ -224,11 +225,23 @@ func (p *Pipeline) Start() error {
 }
 
 // buildPipelineArgs constructs gst-launch pipeline arguments as a slice.
-// If Width/Height are set, a caps filter constrains the source resolution.
-// If both are 0, no caps filter is added and GStreamer auto-negotiates.
+// In passthrough mode, MJPEG from the capture device is sent directly to fdsink
+// without decode/encode. In fallback mode, the full decode+encode path is used.
 func (p *Pipeline) buildPipelineArgs() []string {
 	args := PipelineSourceArgs(p.config.DeviceIndex, p.config.DevicePath)
 
+	if p.config.Passthrough {
+		// MJPEG passthrough: no decode/encode
+		if p.config.Width > 0 && p.config.Height > 0 {
+			args = append(args, "!", fmt.Sprintf("image/jpeg,width=%d,height=%d", p.config.Width, p.config.Height))
+		} else {
+			args = append(args, "!", "image/jpeg")
+		}
+		args = append(args, "!", "fdsink", "fd=1")
+		return args
+	}
+
+	// Fallback: decode + encode path
 	if PipelineNeedsDecodebin() {
 		args = append(args, "!", "decodebin")
 	}
@@ -293,6 +306,7 @@ func readMultipartFrame(r *bufio.Reader) ([]byte, error) {
 
 	// Accumulate bytes until we find EOI (0xFF 0xD9)
 	var buf bytes.Buffer
+	buf.Grow(256 * 1024) // pre-allocate 256KB for typical JPEG frame
 	buf.Write([]byte{0xFF, 0xD8})
 
 	for {
@@ -423,6 +437,7 @@ func (p *Pipeline) Diag() string {
 	fmt.Fprintf(&b, "DeviceIndex: %d\n", p.config.DeviceIndex)
 	fmt.Fprintf(&b, "DevicePath:  %s\n", p.config.DevicePath)
 	fmt.Fprintf(&b, "Resolution:  %dx%d\n", p.config.Width, p.config.Height)
+	fmt.Fprintf(&b, "Passthrough: %v\n", p.config.Passthrough)
 
 	// GStreamer installation check
 	fmt.Fprintf(&b, "\n--- gst-launch-1.0 --version ---\n")
@@ -524,6 +539,27 @@ func (p *Pipeline) Diag() string {
 			}
 		} else {
 			fmt.Fprintf(&b, "OK (%d bytes on stdout)\n", len(fullOut))
+		}
+	}
+
+	// Test pipeline 5: actual device → MJPEG passthrough (tests passthrough caps)
+	if p.config.DevicePath != "" || p.config.DeviceIndex >= 0 {
+		srcArgs := PipelineSourceArgs(p.config.DeviceIndex, p.config.DevicePath)
+		devTestLabel := strings.Join(srcArgs, " ")
+		fmt.Fprintf(&b, "\n--- test: %s ! image/jpeg ! fdsink fd=1 (passthrough) ---\n", devTestLabel)
+		ptArgs := append([]string{"-e"}, srcArgs...)
+		ptArgs = append(ptArgs, "num-buffers=1", "!", "image/jpeg", "!", "fdsink", "fd=1")
+		ptCmd := exec.Command("gst-launch-1.0", ptArgs...)
+		hideWindow(ptCmd)
+		var ptStderr bytes.Buffer
+		ptCmd.Stderr = &ptStderr
+		if ptOut, err := ptCmd.Output(); err != nil {
+			fmt.Fprintf(&b, "FAIL: %v\n", err)
+			if ptStderr.Len() > 0 {
+				fmt.Fprintf(&b, "stderr: %s\n", ptStderr.String())
+			}
+		} else {
+			fmt.Fprintf(&b, "OK (%d bytes on stdout)\n", len(ptOut))
 		}
 	}
 

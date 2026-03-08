@@ -106,28 +106,56 @@ func (a *App) GetStreamURL() string {
 // --- Video ---
 
 // StartVideo starts the GStreamer video capture pipeline.
+// Tries MJPEG passthrough first (zero CPU), falls back to decode+encode if needed.
 func (a *App) StartVideo() error {
 	if a.pipeline != nil && a.pipeline.IsRunning() {
 		return nil
 	}
 
+	baseCfg := video.PipelineConfig{
+		DeviceIndex: a.cfg.DeviceIndex,
+		DevicePath:  a.cfg.DevicePath,
+		Width:       a.cfg.CaptureWidth,
+		Height:      a.cfg.CaptureHeight,
+		Quality:     a.cfg.JpegQuality,
+	}
+
+	// Build attempt list: passthrough first, then fallback
+	type attempt struct {
+		passthrough bool
+		label       string
+	}
+	attempts := []attempt{
+		{passthrough: true, label: "passthrough"},
+		{passthrough: false, label: "decode+encode"},
+	}
+
 	var startErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		a.pipeline = video.NewPipeline(a.store, video.PipelineConfig{
-			DeviceIndex: a.cfg.DeviceIndex,
-			DevicePath:  a.cfg.DevicePath,
-			Width:       a.cfg.CaptureWidth,
-			Height:      a.cfg.CaptureHeight,
-			Quality:     a.cfg.JpegQuality,
-		})
-		if startErr = a.pipeline.Start(); startErr == nil {
+	for _, att := range attempts {
+		cfg := baseCfg
+		cfg.Passthrough = att.passthrough
+		log.Printf("StartVideo: trying %s mode", att.label)
+
+		a.pipeline = video.NewPipeline(a.store, cfg)
+		if startErr = a.pipeline.Start(); startErr != nil {
+			log.Printf("StartVideo: %s failed to start: %v", att.label, startErr)
+			continue
+		}
+
+		// Wait up to 3 seconds for the first frame to verify the pipeline works
+		ok := a.waitForFirstFrame(3 * time.Second)
+		if ok {
+			log.Printf("StartVideo: %s mode active", att.label)
 			break
 		}
-		log.Printf("StartVideo: attempt %d failed: %v", attempt+1, startErr)
-		if attempt < 2 {
-			time.Sleep(500 * time.Millisecond)
-		}
+
+		// No frames received — pipeline may have exited or caps negotiation failed
+		log.Printf("StartVideo: %s mode produced no frames, stopping", att.label)
+		_ = a.pipeline.Stop()
+		a.pipeline = nil
+		startErr = fmt.Errorf("%s: no frames within timeout", att.label)
 	}
+
 	if startErr != nil {
 		return startErr
 	}
@@ -141,6 +169,27 @@ func (a *App) StartVideo() error {
 		}
 	}()
 	return nil
+}
+
+// waitForFirstFrame polls the pipeline for up to timeout, returning true
+// if at least one frame is received.
+func (a *App) waitForFirstFrame(timeout time.Duration) bool {
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-deadline:
+			return false
+		case <-ticker.C:
+			if a.pipeline != nil && a.pipeline.FrameCount() > 0 {
+				return true
+			}
+			if a.pipeline != nil && !a.pipeline.IsRunning() {
+				return false // pipeline exited
+			}
+		}
+	}
 }
 
 // StopVideo stops the video capture pipeline.

@@ -16,3 +16,9 @@ func DiagSourceElement() string {
 func PipelineNeedsDecodebin() bool {
 	return false
 }
+
+// PipelineSupportsPassthrough returns true — most USB capture devices output
+// MJPEG which can be passed through without decode/encode.
+func PipelineSupportsPassthrough() bool {
+	return true
+}

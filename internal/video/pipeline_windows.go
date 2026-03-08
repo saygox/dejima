@@ -16,9 +16,14 @@ func DiagSourceElement() string {
 	return "ksvideosrc"
 }
 
-// PipelineNeedsDecodebin returns true on Windows because USB capture devices
-// often output MJPEG (image/jpeg) which videoconvert cannot handle directly.
-// decodebin auto-detects the format and decodes to raw video.
+// PipelineNeedsDecodebin returns false on Windows; the passthrough path
+// handles MJPEG natively and the fallback path uses decodebin explicitly.
 func PipelineNeedsDecodebin() bool {
+	return false
+}
+
+// PipelineSupportsPassthrough returns true — USB capture devices on Windows
+// typically output MJPEG which can be passed through without decode/encode.
+func PipelineSupportsPassthrough() bool {
 	return true
 }

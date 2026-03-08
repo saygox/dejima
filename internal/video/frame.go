@@ -17,37 +17,30 @@ func NewFrameStore() *FrameStore {
 	return fs
 }
 
-// Update replaces the stored frame with new JPEG data.
+// Update takes ownership of the jpeg slice. Caller must not modify it after this call.
 func (fs *FrameStore) Update(jpeg []byte) {
 	fs.mu.Lock()
-	fs.data = make([]byte, len(jpeg))
-	copy(fs.data, jpeg)
+	fs.data = jpeg // ownership transfer, no copy
 	fs.seq++
 	fs.mu.Unlock()
 	fs.cond.Broadcast()
 }
 
-// Get returns a copy of the current frame data and its sequence number.
+// Get returns a shared reference to the current frame (read-only).
 func (fs *FrameStore) Get() ([]byte, uint64) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	if fs.data == nil {
-		return nil, 0
-	}
-	out := make([]byte, len(fs.data))
-	copy(out, fs.data)
-	return out, fs.seq
+	return fs.data, fs.seq
 }
 
 // WaitNext blocks until a frame with a sequence number > seq is available.
+// Returns a shared reference (read-only).
 func (fs *FrameStore) WaitNext(seq uint64) ([]byte, uint64) {
 	fs.mu.RLock()
 	for fs.seq <= seq {
 		fs.cond.Wait()
 	}
-	out := make([]byte, len(fs.data))
-	copy(out, fs.data)
-	s := fs.seq
+	d, s := fs.data, fs.seq
 	fs.mu.RUnlock()
-	return out, s
+	return d, s
 }
