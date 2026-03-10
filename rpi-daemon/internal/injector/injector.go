@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bendahl/uinput"
@@ -26,13 +27,15 @@ const (
 
 // Injector manages virtual keyboard and mouse devices via uinput.
 type Injector struct {
-	keyboard    uinput.Keyboard
-	mouse       uinput.Mouse
-	absPtr      *absPointer
-	backend     displayBackend
-	env         []string // environment for subprocess calls
-	sessionUser string   // desktop session user (e.g. "pi") for running wtype/wl-paste
-	pasteBuf    []byte   // accumulates paste-mode text chunks until Final
+	keyboard     uinput.Keyboard
+	mouse        uinput.Mouse
+	absPtr       *absPointer
+	backend      displayBackend
+	env          []string // environment for subprocess calls
+	sessionUser  string   // desktop session user (e.g. "pi") for running wtype/wl-paste
+	pasteBuf     []byte   // accumulates paste-mode text chunks until Final
+	mu           sync.Mutex
+	clipboardCmd *exec.Cmd // most recent wl-copy/xclip process (may stay alive to serve clipboard)
 }
 
 // New creates a new uinput Injector.
@@ -321,6 +324,14 @@ func (inj *Injector) typeTextPaste(text string) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("set clipboard (%s): %w", backendName(inj.backend), err)
 	}
+	// Kill previous clipboard process before tracking the new one
+	inj.mu.Lock()
+	if inj.clipboardCmd != nil && inj.clipboardCmd.Process != nil {
+		inj.clipboardCmd.Process.Kill()
+	}
+	inj.clipboardCmd = cmd
+	inj.mu.Unlock()
+
 	errCh := make(chan error, 1)
 	go func() { errCh <- cmd.Wait() }()
 	select {
@@ -344,8 +355,15 @@ func (inj *Injector) typeTextPaste(text string) error {
 	return nil
 }
 
-// Close destroys the virtual devices.
+// Close kills any tracked child processes and destroys the virtual devices.
 func (inj *Injector) Close() {
+	inj.mu.Lock()
+	if inj.clipboardCmd != nil && inj.clipboardCmd.Process != nil {
+		inj.clipboardCmd.Process.Kill()
+		inj.clipboardCmd = nil
+	}
+	inj.mu.Unlock()
+
 	if inj.keyboard != nil {
 		inj.keyboard.Close()
 	}

@@ -55,14 +55,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to open UART: %v", err)
 	}
-	defer port.Close()
 
 	// Create uinput injector
 	inj, err := injector.New()
 	if err != nil {
+		port.Close()
 		log.Fatalf("failed to create injector: %v", err)
 	}
-	defer inj.Close()
 
 	// Handle shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -71,11 +70,8 @@ func main() {
 
 	go func() {
 		<-sigCh
-		log.Printf("shutting down...")
-		close(stopCh)
-		inj.Close()
-		port.Close()
-		os.Exit(0)
+		log.Printf("received signal, shutting down...")
+		port.Close() // ReadFrame will return error, main loop breaks and handles cleanup
 	}()
 
 	// Clipboard monitor: poll remote clipboard and send notifications on change
@@ -83,12 +79,20 @@ func main() {
 
 	// Main loop: read frames and inject events
 	log.Printf("listening for HID events...")
+	const maxReadErrors = 3
+	readErrors := 0
 	for {
 		payload, err := port.ReadFrame()
 		if err != nil {
-			log.Printf("read error: %v", err)
+			readErrors++
+			log.Printf("read error (%d/%d): %v", readErrors, maxReadErrors, err)
+			if readErrors >= maxReadErrors {
+				log.Printf("serial connection lost, shutting down")
+				break
+			}
 			continue
 		}
+		readErrors = 0
 
 		msg, err := protocol.Decode(payload)
 		if err != nil {
@@ -99,6 +103,11 @@ func main() {
 
 		handleMessage(port, inj, msg)
 	}
+
+	// Cleanup: stop clipboard monitor, kill child processes, release devices and port
+	close(stopCh)
+	inj.Close()
+	port.Close()
 }
 
 // clipboardMonitor polls the remote clipboard every 2s and sends
