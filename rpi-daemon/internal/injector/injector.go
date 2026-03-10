@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/bendahl/uinput"
@@ -321,13 +322,15 @@ func (inj *Injector) typeTextPaste(text string) error {
 	// wl-copy (and xclip) stay alive to serve clipboard content.
 	// When called via runuser, runuser waits for all children to exit,
 	// so CombinedOutput() blocks forever. Use Start + background reap instead.
+	// Use Setpgid so we can kill the entire process group (runuser + wl-copy).
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("set clipboard (%s): %w", backendName(inj.backend), err)
 	}
-	// Kill previous clipboard process before tracking the new one
+	// Kill previous clipboard process group before tracking the new one
 	inj.mu.Lock()
 	if inj.clipboardCmd != nil && inj.clipboardCmd.Process != nil {
-		inj.clipboardCmd.Process.Kill()
+		syscall.Kill(-inj.clipboardCmd.Process.Pid, syscall.SIGKILL)
 	}
 	inj.clipboardCmd = cmd
 	inj.mu.Unlock()
@@ -359,7 +362,7 @@ func (inj *Injector) typeTextPaste(text string) error {
 func (inj *Injector) Close() {
 	inj.mu.Lock()
 	if inj.clipboardCmd != nil && inj.clipboardCmd.Process != nil {
-		inj.clipboardCmd.Process.Kill()
+		syscall.Kill(-inj.clipboardCmd.Process.Pid, syscall.SIGKILL)
 		inj.clipboardCmd = nil
 	}
 	inj.mu.Unlock()
