@@ -148,7 +148,6 @@
 
   // --- Send Key (menu) ---
   const SEND_KEY_MAP: Record<string, string[]> = {
-    'escape':       ['Escape'],
     'ctrl-alt-del': ['ControlLeft', 'AltLeft', 'Delete'],
     'alt-tab':      ['AltLeft', 'Tab'],
     'alt-f4':       ['AltLeft', 'F4'],

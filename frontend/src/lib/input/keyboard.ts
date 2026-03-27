@@ -123,8 +123,8 @@ function onKeyDown(e: KeyboardEvent) {
   if (!capturing) return;
   // Ignore key repeat events — only send the initial press
   if (e.repeat) return;
-  // Escape is used to exit capture — never send to remote
-  if (e.code === 'Escape') return;
+  // Shift+Escape is used to exit capture — never send to remote
+  if (e.code === 'Escape' && e.shiftKey) return;
   pressedKeys.add(e.code);
 
   // Cmd+Shift+V: sync host clipboard → remote terminal paste (Ctrl+Shift+V)

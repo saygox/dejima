@@ -87,7 +87,6 @@
   }
 
   const SEND_KEYS = [
-    { label: 'Escape', id: 'escape' },
     { label: 'Ctrl+Alt+Delete', id: 'ctrl-alt-del' },
     { label: 'Alt+Tab', id: 'alt-tab' },
     { label: 'Alt+F4', id: 'alt-f4' },

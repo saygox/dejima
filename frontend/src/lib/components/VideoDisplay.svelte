@@ -10,7 +10,7 @@
   let videoContainer: HTMLElement;
   let imeInput: HTMLTextAreaElement;
   const TITLE_DEFAULT = 'Dejima KVM';
-  const TITLE_CAPTURED = 'Dejima KVM — Input captured (Esc to release)';
+  const TITLE_CAPTURED = 'Dejima KVM — Input captured (Shift+Esc to release)';
 
   let captured = false;
 
@@ -31,7 +31,7 @@
   }
 
   function onKeyDown(e: KeyboardEvent) {
-    if (e.code === 'Escape' && captured) {
+    if (e.code === 'Escape' && e.shiftKey && captured) {
       releaseCaptureState();
     }
   }
