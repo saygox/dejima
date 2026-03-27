@@ -18,6 +18,9 @@ let hasLast = false;
 // Skip the first mousemove delta after re-entering the video container
 // (prevents large movementX/Y jump)
 let skipNextDelta = false;
+// Sync remote cursor to host cursor position on the next mousemove
+// (set when pointer lock exits so the two cursors re-align)
+let syncAbsOnNextMove = false;
 
 function flushMouseMove() {
   moveTimer = null;
@@ -42,6 +45,21 @@ function onMouseEnter(e: MouseEvent) {
 function onMouseMove(e: MouseEvent) {
   if (!capturing) return;
   if (!document.pointerLockElement && !isInsideTarget(e)) return;
+
+  if (syncAbsOnNextMove) {
+    syncAbsOnNextMove = false;
+    skipNextDelta = false;
+    hasLast = false;
+    accDX = 0;
+    accDY = 0;
+    const abs = mapToAbsolute(e.clientX, e.clientY);
+    if (abs) {
+      SendMouseAbs(abs.x, abs.y).catch(console.error);
+    }
+    lastX = e.clientX;
+    lastY = e.clientY;
+    return;
+  }
 
   if (skipNextDelta) {
     skipNextDelta = false;
@@ -158,6 +176,7 @@ export function enterCapture(clientX?: number, clientY?: number) {
   capturing = true;
   hasLast = false;
   skipNextDelta = false;
+  syncAbsOnNextMove = false;
 
   // Sync remote cursor to the click position via absolute coords
   if (clientX !== undefined && clientY !== undefined) {
@@ -182,6 +201,7 @@ export function exitCapture() {
   capturing = false;
   hasLast = false;
   skipNextDelta = false;
+  syncAbsOnNextMove = false;
   if (moveTimer) {
     clearTimeout(moveTimer);
     moveTimer = null;
@@ -216,7 +236,8 @@ export function startMouseCapture(element: HTMLElement, onExit?: () => void) {
   // Only Shift+Esc (handled by VideoDisplay) fully exits capture.
   document.addEventListener('pointerlockchange', () => {
     if (!document.pointerLockElement && capturing) {
-      skipNextDelta = true;
+      // Sync remote cursor to host cursor on the next mousemove
+      syncAbsOnNextMove = true;
       hasLast = false;
     }
   });
