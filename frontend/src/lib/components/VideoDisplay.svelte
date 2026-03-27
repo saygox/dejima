@@ -176,9 +176,9 @@
     outline: 2px solid #4a9eff;
   }
 
-  /* Pointer lock hides the cursor automatically.
-     When lock is released (browser Esc) but capture continues,
-     the cursor stays visible so the user can see where they're pointing. */
+  .video-container.captured {
+    cursor: none;
+  }
 
   /* Default: invisible but focusable (for compositionstart detection) */
   .ime-input {

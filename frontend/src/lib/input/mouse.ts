@@ -213,19 +213,12 @@ export function startMouseCapture(element: HTMLElement, onExit?: () => void) {
   element.addEventListener('mouseenter', onMouseEnter);
   element.addEventListener('wheel', onWheel, { passive: false });
   // When the browser exits pointer lock (e.g. Esc — a non-overridable browser
-  // security feature), re-request pointer lock immediately to keep the cursor
-  // hidden. Only Shift+Esc (handled by VideoDisplay) fully exits capture.
+  // security feature), keep capture active. CSS cursor:none hides the cursor.
+  // Only Shift+Esc (handled by VideoDisplay) fully exits capture.
   document.addEventListener('pointerlockchange', () => {
     if (!document.pointerLockElement && capturing) {
       skipNextDelta = true;
       hasLast = false;
-      // Re-enter pointer lock after a short delay (browser requires a
-      // new user gesture or a tick before re-requesting)
-      setTimeout(() => {
-        if (capturing && targetElement && !document.pointerLockElement) {
-          try { targetElement.requestPointerLock(); } catch (_) { /* ignore */ }
-        }
-      }, 100);
     }
   });
 }
