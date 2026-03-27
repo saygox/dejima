@@ -37,6 +37,11 @@ type Port struct {
 
 	// pongCh receives a signal when a PingEvent (pong) arrives from RPi.
 	pongCh chan struct{}
+
+	// OnDead is called once when the connection is detected as dead
+	// (e.g. Bluetooth out of range). Called from a new goroutine.
+	OnDead   func()
+	deadOnce sync.Once
 }
 
 // Open opens a serial port with the given name and baud rate.
@@ -104,6 +109,8 @@ func (p *Port) Write(payload []byte) error {
 // readLoop reads framed messages from the serial port and dispatches them.
 func (p *Port) readLoop() {
 	defer p.wg.Done()
+	const maxConsecErrors = 50 // ~5s at 100ms read timeout
+	consecErrors := 0
 	for {
 		select {
 		case <-p.stopCh:
@@ -117,10 +124,20 @@ func (p *Port) readLoop() {
 			case <-p.stopCh:
 				return
 			default:
-				log.Printf("serial: read error: %v", err)
+				consecErrors++
+				if consecErrors >= maxConsecErrors {
+					log.Printf("serial: %d consecutive read errors, connection dead", consecErrors)
+					p.deadOnce.Do(func() {
+						if p.OnDead != nil {
+							go p.OnDead()
+						}
+					})
+					return
+				}
 				continue
 			}
 		}
+		consecErrors = 0
 
 		msg, err := protocol.Decode(payload)
 		if err != nil {

@@ -16,6 +16,8 @@ import (
 	"github.com/saygox/dejima/internal/protocol"
 	"github.com/saygox/dejima/internal/serial"
 	"github.com/saygox/dejima/internal/video"
+
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct holds the application state and is bound to Wails.
@@ -389,6 +391,13 @@ func (a *App) ConnectSerial(portName string) error {
 	a.serialMu.Unlock()
 
 	a.hid.SetPort(port)
+
+	// Auto-disconnect when the connection is detected as dead (e.g. BT out of range).
+	port.OnDead = func() {
+		log.Printf("serial: connection lost, auto-disconnecting")
+		a.disconnectSerialLocked()
+		wailsRuntime.EventsEmit(a.ctx, "serial:disconnected")
+	}
 
 	// Start listening for remote clipboard notifications
 	go a.remoteClipNotifyListener(port, stopCh)

@@ -195,6 +195,9 @@
     cancelFns.push(EventsOn('menu:videoDiag', runVideoDiag));
     cancelFns.push(EventsOn('menu:rpiDiag', runDiagnostics));
     cancelFns.push(EventsOn('menu:sendKey', handleSendKey));
+    cancelFns.push(EventsOn('serial:disconnected', () => {
+      updateSerial('');
+    }));
 
     const cfg = await GetConfig();
 
