@@ -210,13 +210,14 @@ export function startMouseCapture(element: HTMLElement, onExit?: () => void) {
   document.addEventListener('mouseup', onMouseUp);
   element.addEventListener('mouseenter', onMouseEnter);
   element.addEventListener('wheel', onWheel, { passive: false });
-  // Sync capturing state when pointer lock changes (e.g. user presses Esc)
+  // When the browser exits pointer lock (e.g. Esc — a non-overridable browser
+  // security feature), keep capture active and continue in non-locked mode.
+  // The cursor becomes visible but mouse events are still forwarded to remote.
+  // Only Shift+Esc (handled by VideoDisplay) fully exits capture.
   document.addEventListener('pointerlockchange', () => {
     if (!document.pointerLockElement && capturing) {
-      // Pointer lock was exited (e.g. Esc) — exit capture
-      capturing = false;
+      skipNextDelta = true;
       hasLast = false;
-      if (onCaptureExit) onCaptureExit();
     }
   });
 }
