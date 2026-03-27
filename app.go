@@ -358,9 +358,9 @@ func (a *App) ListSerialPorts() ([]string, error) {
 	return serial.ListPorts()
 }
 
-// DetectFT232 attempts to auto-detect the FT232 serial port.
-func (a *App) DetectFT232() (string, error) {
-	return serial.DetectFT232()
+// DetectSerialPort attempts to auto-detect a serial port (Bluetooth SPP or FT232).
+func (a *App) DetectSerialPort() (string, error) {
+	return serial.DetectSerialPort()
 }
 
 // ConnectSerial opens the given serial port.

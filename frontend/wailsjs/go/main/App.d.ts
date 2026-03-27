@@ -6,7 +6,7 @@ import {video} from '../models';
 
 export function ConnectSerial(arg1:string):Promise<void>;
 
-export function DetectFT232():Promise<string>;
+export function DetectSerialPort():Promise<string>;
 
 export function DisconnectSerial():Promise<void>;
 

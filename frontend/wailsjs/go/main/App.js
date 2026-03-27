@@ -6,8 +6,8 @@ export function ConnectSerial(arg1) {
   return window['go']['main']['App']['ConnectSerial'](arg1);
 }
 
-export function DetectFT232() {
-  return window['go']['main']['App']['DetectFT232']();
+export function DetectSerialPort() {
+  return window['go']['main']['App']['DetectSerialPort']();
 }
 
 export function DisconnectSerial() {

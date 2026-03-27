@@ -2,7 +2,7 @@
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { connection, updateVideo, updateSerial } from '../stores/connection';
   import { pasteMode } from '../stores/imeMode';
-  import { GetVideoFrameCount, GetVideoStatus, StartVideo, StopVideo, GetConfig, ConnectSerial, DisconnectSerial, DetectFT232, GetAudioVolume, GetAudioMuted, SetAudioVolume, SetAudioMuted } from '../../../wailsjs/go/main/App';
+  import { GetVideoFrameCount, GetVideoStatus, StartVideo, StopVideo, GetConfig, ConnectSerial, DisconnectSerial, DetectSerialPort, GetAudioVolume, GetAudioMuted, SetAudioVolume, SetAudioMuted } from '../../../wailsjs/go/main/App';
 
   const dispatch = createEventDispatcher();
 
@@ -139,7 +139,7 @@
         const cfg = await GetConfig();
         let port = cfg.serial_port;
         if (!port) {
-          port = await DetectFT232();
+          port = await DetectSerialPort();
         }
         await ConnectSerial(port);
         updateSerial(port);

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { ListSerialPorts, ConnectSerial, DisconnectSerial, DetectFT232, GetSerialStatus } from '../../../wailsjs/go/main/App';
+  import { ListSerialPorts, ConnectSerial, DisconnectSerial, DetectSerialPort, GetSerialStatus } from '../../../wailsjs/go/main/App';
   import { updateSerial } from '../stores/connection';
 
   const dispatch = createEventDispatcher();
@@ -30,7 +30,7 @@
 
   async function autoDetect() {
     try {
-      const port = await DetectFT232();
+      const port = await DetectSerialPort();
       selectedPort = port;
       error = '';
     } catch (e) {
