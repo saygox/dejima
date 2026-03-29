@@ -358,12 +358,24 @@ func (a *App) GetAudioDiag() string {
 
 // ListSerialPorts returns available serial port names.
 func (a *App) ListSerialPorts() ([]string, error) {
-	return serial.ListPorts()
+	ports, err := serial.ListPorts()
+	if err != nil {
+		log.Printf("serial: ListSerialPorts failed: %v", err)
+	} else {
+		log.Printf("serial: ListSerialPorts → %v", ports)
+	}
+	return ports, err
 }
 
 // DetectSerialPort attempts to auto-detect a serial port (Bluetooth SPP or FT232).
 func (a *App) DetectSerialPort() (string, error) {
-	return serial.DetectSerialPort()
+	port, err := serial.DetectSerialPort()
+	if err != nil {
+		log.Printf("serial: DetectSerialPort failed: %v", err)
+	} else {
+		log.Printf("serial: DetectSerialPort → %s", port)
+	}
+	return port, err
 }
 
 // ConnectSerial opens the given serial port.
@@ -417,6 +429,9 @@ func (a *App) DisconnectSerial() {
 func (a *App) disconnectSerialLocked() {
 	a.serialMu.Lock()
 	port := a.serialPort
+	if port != nil {
+		log.Printf("serial: disconnecting %s", port.Name())
+	}
 	stopCh := a.clipNotifyStopCh
 	a.serialPort = nil
 	a.clipNotifyStopCh = nil

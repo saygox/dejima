@@ -125,8 +125,11 @@ func (p *Port) readLoop() {
 				return
 			default:
 				consecErrors++
+				if consecErrors == 1 {
+					log.Printf("serial: first read error on %s: %v", p.name, err)
+				}
 				if consecErrors >= maxConsecErrors {
-					log.Printf("serial: %d consecutive read errors, connection dead", consecErrors)
+					log.Printf("serial: %d consecutive read errors on %s, connection dead", consecErrors, p.name)
 					p.deadOnce.Do(func() {
 						if p.OnDead != nil {
 							go p.OnDead()
@@ -201,6 +204,7 @@ func (p *Port) readLoop() {
 
 // Ping sends a ping frame and waits for a pong response from the RPi daemon.
 func (p *Port) Ping(timeout time.Duration) error {
+	log.Printf("serial: ping %s (timeout=%v)", p.name, timeout)
 	payload, err := protocol.Encode(protocol.Message{Type: protocol.MsgPing, Payload: protocol.PingEvent{}})
 	if err != nil {
 		return fmt.Errorf("encoding ping: %w", err)
@@ -216,9 +220,12 @@ func (p *Port) Ping(timeout time.Duration) error {
 	select {
 	case err := <-writeDone:
 		if err != nil {
+			log.Printf("serial: ping write failed: %v", err)
 			return fmt.Errorf("sending ping: %w", err)
 		}
+		log.Printf("serial: ping write OK, waiting for pong…")
 	case <-time.After(timeout):
+		log.Printf("serial: ping write timeout after %v", timeout)
 		return fmt.Errorf("ping write timeout after %v", timeout)
 	case <-p.stopCh:
 		return fmt.Errorf("port closed")
@@ -226,8 +233,10 @@ func (p *Port) Ping(timeout time.Duration) error {
 
 	select {
 	case <-p.pongCh:
+		log.Printf("serial: pong received")
 		return nil
 	case <-time.After(timeout):
+		log.Printf("serial: pong timeout after %v", timeout)
 		return fmt.Errorf("ping timeout after %v", timeout)
 	case <-p.stopCh:
 		return fmt.Errorf("port closed")

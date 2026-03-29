@@ -2,6 +2,7 @@ package serial
 
 import (
 	"fmt"
+	"log"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -59,6 +60,7 @@ func detectWindows() (string, error) {
 	}
 
 	var btPort, ftPort, anyPort string
+	var total int
 	lines := strings.Split(string(out), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -77,6 +79,7 @@ func detectWindows() (string, error) {
 		if port == "" {
 			continue
 		}
+		total++
 		lowerName := strings.ToLower(name)
 		upperDevID := strings.ToUpper(devID)
 		switch {
@@ -84,16 +87,20 @@ func detectWindows() (string, error) {
 			// Skip incoming (local) BT ports — only pick outgoing ones.
 			// Incoming ports have LOCALMFG in the DeviceID.
 			if strings.Contains(upperDevID, "LOCALMFG") {
+				log.Printf("serial/detect: skip BT incoming %s", port)
 				continue
 			}
+			log.Printf("serial/detect: found BT outgoing %s", port)
 			if btPort == "" {
 				btPort = port
 			}
 		case strings.Contains(lowerName, "ft232") || strings.Contains(lowerName, "ftdi"):
+			log.Printf("serial/detect: found FTDI %s", port)
 			if ftPort == "" {
 				ftPort = port
 			}
 		default:
+			log.Printf("serial/detect: found other %s", port)
 			if anyPort == "" {
 				anyPort = port
 			}
@@ -102,14 +109,18 @@ func detectWindows() (string, error) {
 
 	// Priority: Bluetooth SPP first, then FT232/FTDI, then any COM port
 	if btPort != "" {
+		log.Printf("serial/detect: selected BT %s (scanned %d ports)", btPort, total)
 		return btPort, nil
 	}
 	if ftPort != "" {
+		log.Printf("serial/detect: selected FTDI %s (scanned %d ports)", ftPort, total)
 		return ftPort, nil
 	}
 	if anyPort != "" {
+		log.Printf("serial/detect: selected other %s (scanned %d ports)", anyPort, total)
 		return anyPort, nil
 	}
+	log.Printf("serial/detect: no port found (scanned %d ports)", total)
 	return "", fmt.Errorf("no serial port found (checked Bluetooth SPP and USB)")
 }
 
