@@ -270,6 +270,7 @@ func (a *App) startAudio() error {
 
 	if !p.IsRunning() && cfg.DeviceID != "" {
 		log.Printf("audio: saved device %q failed, retrying with default device", cfg.DeviceID)
+		p.Stop() // ensure the failed pipeline fully releases the device
 		p = audio.NewPipeline()
 		p.SetVolume(vol)
 		p.SetMuted(a.cfg.AudioMuted)

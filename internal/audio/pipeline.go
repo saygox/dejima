@@ -147,7 +147,15 @@ func (p *Pipeline) Stop() {
 		p.restartTimer = nil
 	}
 
-	close(p.stopCh)
+	// Close stopCh only if it was created and not already closed.
+	if p.stopCh != nil {
+		select {
+		case <-p.stopCh:
+			// already closed
+		default:
+			close(p.stopCh)
+		}
+	}
 
 	if p.cmd != nil && p.cmd.Process != nil {
 		_ = killProcess(p.cmd)
@@ -181,6 +189,13 @@ func (p *Pipeline) scheduleRestart() {
 		p.restartTimer.Stop()
 	}
 	p.restartTimer = time.AfterFunc(200*time.Millisecond, func() {
+		// Re-check running state — Stop() may have been called while waiting.
+		p.mu.Lock()
+		if !p.running {
+			p.mu.Unlock()
+			return
+		}
+		p.mu.Unlock()
 		p.Stop()
 		if err := p.Start(p.lastCfg); err != nil {
 			log.Printf("audio: restart failed: %v", err)
