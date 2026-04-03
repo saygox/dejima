@@ -223,6 +223,38 @@ ls /dev/tty.*
 
 Dejima KVM アプリの設定画面でこのポートを選択してください。
 
+### macOS: bluetoothd 再起動の設定 (必須)
+
+macOS の `bluetoothd` は RFCOMM/SPP の状態を切断後に正しく解放しないバグがあります。
+一度シリアル接続を切断すると、再接続時にポートを開いても RFCOMM チャネルが確立されず、
+RPi 側に接続が到達しません（Mac 再起動直後の最初の 1 回だけ成功するパターン）。
+
+Dejima KVM はこの問題を回避するため、BT シリアルポートへの接続前に
+`bluetoothd` を自動的に再起動します。`sudo` でパスワードなしで実行できるよう、
+以下の sudoers 設定が**必須**です。
+
+```bash
+sudo visudo -f /etc/sudoers.d/dejima-bluetooth
+```
+
+以下の内容を記述して保存:
+
+```
+%staff ALL=(root) NOPASSWD: /usr/bin/pkill bluetoothd
+```
+
+> `bluetoothd` は launchd で管理されているため、kill 後に自動的に再起動されます。
+> Bluetooth マウスなどを使用している場合、接続時に一瞬切断されますが数秒で再接続されます。
+
+> sudoers を設定しない場合、フォールバックとして `blueutil --power off/on` による
+> 電源サイクルを試みますが、信頼性は低くなります。
+
+`blueutil` のインストール (sudoers 未設定時のフォールバック用):
+
+```bash
+brew install blueutil
+```
+
 ### Windows
 
 1. **設定 → Bluetooth とデバイス** を開く
