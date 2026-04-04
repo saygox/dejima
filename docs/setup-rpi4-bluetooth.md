@@ -438,6 +438,45 @@ sudo rfcomm listen /dev/rfcomm0 1
 
 ホスト PC 側から再接続してください。
 
+### macOS から接続時に Ping timeout になる（Windows では正常動作）
+
+**症状**: macOS 側で `/dev/tty.<デバイス名>` は見えており、ポートを open できるが、
+RPi 側で `/dev/rfcomm0` が作成されず、デーモンが起動しない。
+`bluetoothctl info` では `Connected: yes` でも、SPP (RFCOMM) チャネルが確立されていない。
+Windows からの同じ操作では正常に接続できる。
+
+**調査ログ (2026-04-03)**:
+
+1. Mac (athena) と RPi5 は `Paired: yes`, `Connected: yes`
+2. `rfcomm watch /dev/rfcomm0 1` はリッスン中
+3. Mac 側が BT シリアルポートを open → RPi 側の `rfcomm watch` に**接続が到達しない**
+   - `journalctl -u dejima-rfcomm` に新規ログなし
+   - `/dev/rfcomm0` が作成されない
+   - `rfcomm -a` が空
+4. `bluetoothctl connect` で `br-connection-profile-unavailable` エラー
+
+**既知の要因**:
+
+- **SDP サービスの重複登録**: `systemctl restart dejima-rfcomm` のたびに `ExecStartPre=sdptool add SP` が実行され、
+  SDP に Serial Port サービスが複数登録される。`sudo sdptool browse local` で確認し、
+  重複があれば `sudo sdptool del <RecHandle>` で削除。
+  → サービスファイルの `ExecStartPre` に冪等なクリーンアップを追加するのが望ましい。
+
+- **macOS と Windows の SPP 接続の違い**:
+  - **Windows**: OS が Bluetooth SPP 接続時に明示的に RFCOMM チャネルを開く。
+    RPi 側の `rfcomm watch` が接続を検知し `/dev/rfcomm0` を作成。
+  - **macOS**: BT シリアルポート (`/dev/tty.<name>`) を open しても、
+    OS レベルで RFCOMM チャネルの確立が遅延するか、
+    RPi 側の `rfcomm watch` が検知できない形式で接続する可能性がある。
+
+- **二重接続の問題**: ホストアプリの `ConnectSerial()` は呼び出し時に必ず `disconnectSerialLocked()` を先に実行する。
+  フロントエンドの自動接続 (`App.svelte` の `onMount`) とユーザー操作 (`StatusBar` のダブルクリック) が
+  短時間に重複すると、最初の接続が即座に切断され、RPi 側のデーモンが `Port has been closed` で終了する。
+  デーモン終了後の再接続タイミングによっては `rfcomm watch` が次の接続を受け付けられない。
+
+**未解決**: macOS からの SPP 接続が RPi 側の RFCOMM レイヤーに到達しない根本原因は特定できていない。
+Windows では問題なく動作するため、macOS 固有の BT SPP ハンドリングの違いが関係している可能性がある。
+
 ### rfcomm listen が「Address already in use」になる
 
 前回の rfcomm プロセスが残っている可能性があります。
