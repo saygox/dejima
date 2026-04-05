@@ -9,6 +9,12 @@ const MODIFIER_CODES = new Set([
   'AltLeft', 'AltRight', 'ShiftLeft', 'ShiftRight',
 ]);
 
+// Ctrl+Tab → Alt+Tab window-switcher state.
+// While Ctrl is held, we keep AltLeft pressed on the remote so the user can
+// press Tab repeatedly to cycle through windows.  AltLeft is released when
+// Ctrl is released (handled in onKeyUp).
+let altTabActive = false;
+
 async function releaseHeldModifiers(): Promise<void> {
   for (const code of pressedKeys) {
     // Skip Meta — we never send it to remote (suppressed in onKeyDown)
@@ -157,14 +163,19 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.code === 'MetaLeft' || e.code === 'MetaRight') return;
 
   // Ctrl+Tab / Ctrl+Shift+Tab → Alt+Tab / Alt+Shift+Tab (window switch on remote Linux)
-  // Cmd+Tab is intercepted by macOS, so Ctrl+Tab is used as the trigger instead.
+  // Hold AltLeft while Ctrl remains held so user can press Tab repeatedly to cycle windows.
+  // AltLeft is released when Ctrl is released (see onKeyUp).
   if (e.code === 'Tab' && e.ctrlKey && !e.metaKey) {
-    const combo = e.shiftKey
-      ? [['AltLeft', true], ['ShiftLeft', true], ['Tab', true], ['Tab', false], ['ShiftLeft', false], ['AltLeft', false]] as const
-      : [['AltLeft', true], ['Tab', true], ['Tab', false], ['AltLeft', false]] as const;
     (async () => {
-      await releaseHeldModifiers();
-      for (const [code, down] of combo) await SendKeyEvent(code, down);
+      if (!altTabActive) {
+        await releaseHeldModifiers();
+        await SendKeyEvent('AltLeft', true);
+        altTabActive = true;
+      }
+      if (e.shiftKey) await SendKeyEvent('ShiftLeft', true);
+      await SendKeyEvent('Tab', true);
+      await SendKeyEvent('Tab', false);
+      if (e.shiftKey) await SendKeyEvent('ShiftLeft', false);
     })().catch(console.error);
     return;
   }
@@ -215,7 +226,14 @@ function onKeyUp(e: KeyboardEvent) {
 
   // Don't send Meta release — we suppressed the press too
   if (e.code !== 'MetaLeft' && e.code !== 'MetaRight') {
-    SendKeyEvent(e.code, false).catch(console.error);
+    // Ctrl release while Alt+Tab window-switcher is active → release AltLeft on remote
+    if ((e.code === 'ControlLeft' || e.code === 'ControlRight') && altTabActive) {
+      altTabActive = false;
+      SendKeyEvent('AltLeft', false).catch(console.error);
+      // Don't send Ctrl release — we never sent Ctrl down (we sent Alt instead)
+    } else {
+      SendKeyEvent(e.code, false).catch(console.error);
+    }
   }
 
   // macOS: keyup for letter keys does NOT fire while Cmd is held.
@@ -233,6 +251,10 @@ function onKeyUp(e: KeyboardEvent) {
 
 /** Release all currently pressed keys on the remote side. */
 export function releaseAllKeys() {
+  if (altTabActive) {
+    altTabActive = false;
+    SendKeyEvent('AltLeft', false).catch(console.error);
+  }
   for (const code of pressedKeys) {
     SendKeyEvent(code, false).catch(console.error);
   }
