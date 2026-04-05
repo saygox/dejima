@@ -6,6 +6,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os/exec"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,8 +32,9 @@ type App struct {
 	audioPipe  *audio.Pipeline
 	audioWg    sync.WaitGroup // tracks async startAudio goroutine
 	hid        *hid.Controller
-	serialMu   sync.Mutex // protects serialPort and clipNotifyStopCh
-	serialPort *serial.Port
+	serialMu         sync.Mutex // protects serialPort, serialConnecting, and clipNotifyStopCh
+	serialPort       *serial.Port
+	serialConnecting bool // true while ConnectSerial is in progress
 	streamAddr string // "http://localhost:<port>" for MJPEG stream
 
 	// Clipboard smart-paste state
@@ -381,7 +385,45 @@ func (a *App) DetectSerialPort() (string, error) {
 // ConnectSerial opens the given serial port.
 func (a *App) ConnectSerial(portName string) error {
 	log.Printf("serial: ConnectSerial(%s) called", portName)
+
+	// Skip if already connected or connection in progress.
+	a.serialMu.Lock()
+	if a.serialPort != nil && a.serialPort.Name() == portName {
+		a.serialMu.Unlock()
+		log.Printf("serial: already connected to %s, skipping", portName)
+		return nil
+	}
+	if a.serialConnecting {
+		a.serialMu.Unlock()
+		log.Printf("serial: connection already in progress, skipping")
+		return fmt.Errorf("connection already in progress")
+	}
+	a.serialConnecting = true
+	a.serialMu.Unlock()
+	defer func() {
+		a.serialMu.Lock()
+		a.serialConnecting = false
+		a.serialMu.Unlock()
+	}()
+
 	a.disconnectSerialLocked()
+
+	// macOS bluetoothd doesn't fully release RFCOMM state after disconnect.
+	// Restarting bluetoothd before opening the port forces a clean RFCOMM
+	// negotiation and avoids a spurious open/close that kills the RPi daemon.
+	// Requires a sudoers entry: %staff ALL=(root) NOPASSWD: /usr/bin/pkill bluetoothd
+	if runtime.GOOS == "darwin" && isBTPort(portName) {
+		if err := exec.Command("sudo", "-n", "pkill", "bluetoothd").Run(); err == nil {
+			log.Printf("serial: BT port detected, restarted bluetoothd")
+			time.Sleep(5 * time.Second)
+		} else {
+			log.Printf("serial: BT port detected, bluetoothd restart failed (%v), trying power-cycle...", err)
+			_ = exec.Command("blueutil", "--power", "0").Run()
+			time.Sleep(2 * time.Second)
+			_ = exec.Command("blueutil", "--power", "1").Run()
+			time.Sleep(5 * time.Second)
+		}
+	}
 
 	port, err := serial.Open(portName, a.cfg.BaudRate)
 	if err != nil {
@@ -424,6 +466,14 @@ func (a *App) ConnectSerial(portName string) error {
 // DisconnectSerial closes the current serial connection.
 func (a *App) DisconnectSerial() {
 	a.disconnectSerialLocked()
+}
+
+// isBTPort returns true if the port name looks like a macOS Bluetooth serial port
+// (not USB-serial like FT232).
+func isBTPort(name string) bool {
+	return strings.HasPrefix(name, "/dev/tty.") &&
+		!strings.Contains(name, "usbserial") &&
+		!strings.Contains(name, "usbmodem")
 }
 
 func (a *App) disconnectSerialLocked() {
