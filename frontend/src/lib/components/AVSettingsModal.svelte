@@ -19,6 +19,7 @@
   let videoDevices: VideoDevice[] = [];
   let audioDevices: AudioDeviceInfo[] = [];
   let selectedDeviceKey = '0:';
+  let selectedAudioDeviceId = '';
   let selectedResolution = '0x0';
   let selectedSampleRate = 48000;
   let error = '';
@@ -45,22 +46,13 @@
       if (match) {
         selectedDeviceKey = `${match.index}:${match.path || ''}`;
         updateVideoDevice(match.name);
-        if (!cfg.audio_device_id) {
-          const audioDev = audioDevices.find(a =>
-            a.name === match.name || a.name.includes(match.name) || match.name.includes(a.name)
-          );
-          if (audioDev) SetAudioDevice(audioDev.id);
-        }
       } else if (videoDevices.length > 0) {
         const first = videoDevices[0];
         selectedDeviceKey = `${first.index}:${first.path || ''}`;
         SetDevice(first.index, first.path || '');
         updateVideoDevice(first.name);
-        const audioDev = audioDevices.find(a =>
-          a.name === first.name || a.name.includes(first.name) || first.name.includes(a.name)
-        );
-        if (audioDev) SetAudioDevice(audioDev.id);
       }
+      selectedAudioDeviceId = cfg.audio_device_id || '';
       const w = cfg.capture_width || 0;
       const h = cfg.capture_height || 0;
       selectedResolution = (w && h) ? `${w}x${h}` : '0x0';
@@ -93,12 +85,10 @@
     SetDevice(parseInt(idxStr) || 0, pathParts.join(':'));
     const dev = videoDevices.find(d => `${d.index}:${d.path || ''}` === selectedDeviceKey);
     updateVideoDevice(dev?.name || '');
-    if (dev) {
-      const audioDev = audioDevices.find(a =>
-        a.name === dev.name || a.name.includes(dev.name) || dev.name.includes(a.name)
-      );
-      if (audioDev) SetAudioDevice(audioDev.id);
-    }
+  }
+
+  function onAudioDeviceSelect() {
+    SetAudioDevice(selectedAudioDeviceId);
   }
 
   function onResolutionChange() {
@@ -158,6 +148,16 @@
         </select>
       </div>
       <p class="hint">Resolution must not exceed the HDMI source output.</p>
+
+      <label class="field-label" for="audio-device">Audio Device</label>
+      <div class="port-row">
+        <select id="audio-device" bind:value={selectedAudioDeviceId} on:change={onAudioDeviceSelect}>
+          <option value="">Default</option>
+          {#each audioDevices as dev}
+            <option value={dev.id}>{dev.name}</option>
+          {/each}
+        </select>
+      </div>
 
       <label class="field-label" for="sample-rate">Audio Sample Rate</label>
       <div class="port-row">

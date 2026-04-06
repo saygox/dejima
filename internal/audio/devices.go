@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/saygox/dejima/internal/sysenc"
 )
 
 // AudioDevice represents a detected audio capture device.
@@ -21,7 +23,7 @@ func ListDevices() ([]AudioDevice, error) {
 	if err != nil {
 		return nil, fmt.Errorf("running gst-device-monitor-1.0 Audio/Source: %w", err)
 	}
-	return parseDeviceMonitorOutput(string(out)), nil
+	return parseDeviceMonitorOutput(sysenc.Decode(out)), nil
 }
 
 // parseDeviceMonitorOutput extracts audio device names and identifiers from

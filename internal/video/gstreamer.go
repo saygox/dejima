@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/saygox/dejima/internal/procgroup"
+	"github.com/saygox/dejima/internal/sysenc"
 )
 
 // VideoDevice represents a detected video capture device.
@@ -30,7 +31,7 @@ func ListDevices() ([]VideoDevice, error) {
 	if err != nil {
 		return nil, fmt.Errorf("running gst-device-monitor-1.0: %w", err)
 	}
-	return parseDeviceMonitorOutput(string(out)), nil
+	return parseDeviceMonitorOutput(sysenc.Decode(out)), nil
 }
 
 // parseDeviceMonitorOutput extracts device names and indices/paths from

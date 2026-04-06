@@ -38,8 +38,9 @@ func killProcess(cmd *exec.Cmd) error {
 	return nil
 }
 
-// waitDeviceRelease waits briefly for Windows to release device handles
-// after a GStreamer process has been reaped.
+// waitDeviceRelease waits for Windows to release WASAPI device handles
+// after a GStreamer process has been reaped. WASAPI2 can take over a second
+// to fully release exclusive-mode handles.
 func waitDeviceRelease() {
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(1500 * time.Millisecond)
 }

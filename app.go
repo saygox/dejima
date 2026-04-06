@@ -255,15 +255,23 @@ func (a *App) SetCaptureResolution(width, height int) {
 // --- Audio ---
 
 func (a *App) startAudio() error {
-	p := audio.NewPipeline()
+	// Ensure any previous pipeline is fully stopped before opening the device.
+	if a.audioPipe != nil {
+		log.Println("startAudio: stopping previous audio pipeline first")
+		a.audioPipe.Stop()
+		a.audioPipe = nil
+	}
+
 	vol := float64(a.cfg.AudioVolume) / 100.0
-	p.SetVolume(vol)
-	p.SetMuted(a.cfg.AudioMuted)
 
 	cfg := audio.PipelineConfig{
 		DeviceID:   a.cfg.AudioDeviceID,
 		SampleRate: a.cfg.AudioSampleRate,
 	}
+
+	p := audio.NewPipeline()
+	p.SetVolume(vol)
+	p.SetMuted(a.cfg.AudioMuted)
 
 	if err := p.Start(cfg); err != nil {
 		return fmt.Errorf("audio: %w", err)
@@ -273,8 +281,8 @@ func (a *App) startAudio() error {
 	time.Sleep(2 * time.Second)
 
 	if !p.IsRunning() && cfg.DeviceID != "" {
-		log.Printf("audio: saved device %q failed, retrying with default device", cfg.DeviceID)
-		p.Stop() // ensure the failed pipeline fully releases the device
+		log.Printf("audio: device %q failed, retrying with default device", cfg.DeviceID)
+		p.Stop()
 		p = audio.NewPipeline()
 		p.SetVolume(vol)
 		p.SetMuted(a.cfg.AudioMuted)
