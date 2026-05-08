@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -423,24 +424,65 @@ func (a *App) ConnectSerial(portName string) error {
 	if runtime.GOOS == "darwin" && isBTPort(portName) {
 		if err := exec.Command("sudo", "-n", "pkill", "bluetoothd").Run(); err == nil {
 			log.Printf("serial: BT port detected, restarted bluetoothd")
-			time.Sleep(5 * time.Second)
 		} else {
 			log.Printf("serial: BT port detected, bluetoothd restart failed (%v), trying power-cycle...", err)
 			_ = exec.Command("blueutil", "--power", "0").Run()
 			time.Sleep(2 * time.Second)
 			_ = exec.Command("blueutil", "--power", "1").Run()
-			time.Sleep(5 * time.Second)
 		}
 	}
 
-	port, err := serial.Open(portName, a.cfg.BaudRate)
+	// After bluetoothd restart both tty. and cu. disappear then reappear.
+	// Wait for the cu. variant to disappear first (confirms restart), then reappear.
+	openName := portName
+	if runtime.GOOS == "darwin" && isBTPort(portName) {
+		base := strings.TrimPrefix(strings.TrimPrefix(portName, "/dev/tty."), "/dev/cu.")
+		cuName := "/dev/cu." + base
+
+		// Phase 1: wait for port to disappear (up to 5s)
+		log.Printf("serial: waiting for %s to disappear...", cuName)
+		disappearDeadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(disappearDeadline) {
+			if _, err := os.Stat(cuName); os.IsNotExist(err) {
+				log.Printf("serial: %s disappeared", cuName)
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+
+		// Phase 2: wait for port to reappear (up to 20s)
+		log.Printf("serial: waiting for %s to reappear (up to 20s)...", cuName)
+		deadline := time.Now().Add(20 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(cuName); err == nil {
+				log.Printf("serial: %s reappeared, waiting 2s for RFCOMM to settle", cuName)
+				time.Sleep(2 * time.Second)
+				openName = cuName
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		if openName == portName {
+			log.Printf("serial: %s did not reappear within 20s", cuName)
+		}
+	}
+
+	port, err := serial.Open(openName, a.cfg.BaudRate)
 	if err != nil {
 		log.Printf("serial: Open failed: %v", err)
 		return err
 	}
 
+	// BT ports need time for RFCOMM re-establishment after bluetoothd restart.
+	pingTimeout := 2 * time.Second
+	if runtime.GOOS == "darwin" && isBTPort(openName) {
+		log.Printf("serial: BT port open, waiting 2s for RFCOMM to stabilize")
+		time.Sleep(2 * time.Second)
+		pingTimeout = 8 * time.Second
+	}
+
 	// Verify the RPi daemon is actually responding before declaring success.
-	if err := port.Ping(2 * time.Second); err != nil {
+	if err := port.Ping(pingTimeout); err != nil {
 		log.Printf("serial: Ping failed, closing port: %v", err)
 		port.Close()
 		return fmt.Errorf("device not responding on %s: %w", portName, err)
@@ -479,9 +521,10 @@ func (a *App) DisconnectSerial() {
 // isBTPort returns true if the port name looks like a macOS Bluetooth serial port
 // (not USB-serial like FT232).
 func isBTPort(name string) bool {
-	return strings.HasPrefix(name, "/dev/tty.") &&
-		!strings.Contains(name, "usbserial") &&
-		!strings.Contains(name, "usbmodem")
+	if !strings.HasPrefix(name, "/dev/tty.") && !strings.HasPrefix(name, "/dev/cu.") {
+		return false
+	}
+	return !strings.Contains(name, "usbserial") && !strings.Contains(name, "usbmodem")
 }
 
 func (a *App) disconnectSerialLocked() {
